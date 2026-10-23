@@ -102,3 +102,33 @@ export async function seedConversation(db: Db, a: string, b: string): Promise<st
     return rows[0]!.id;
   });
 }
+
+export async function seedPost(
+  db: Db,
+  authorId: string,
+  body: string,
+  options: { media?: unknown[]; status?: string; createdAt?: string } = {},
+): Promise<string> {
+  return db.withSystem(async (tx) => {
+    const rows = await tx.query<{ id: string }>(
+      `insert into posts (author_id, school_id, body, media, status, created_at)
+       values (
+         $1,
+         (select school_id from users where id = $1),
+         $2,
+         $3::jsonb,
+         $4::post_status,
+         coalesce($5::timestamptz, now())
+       )
+       returning id`,
+      [
+        authorId,
+        body,
+        JSON.stringify(options.media ?? []),
+        options.status ?? "published",
+        options.createdAt ?? null,
+      ],
+    );
+    return rows[0]!.id;
+  });
+}

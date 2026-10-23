@@ -7,11 +7,13 @@ import { Banner, Button, Chip, Field, Textarea } from "@/components/ui";
 
 export function ReportDialog({
   targetUserId,
+  targetPostId,
   targetName,
   onClose,
   onDone,
 }: {
-  targetUserId: string;
+  targetUserId?: string;
+  targetPostId?: string;
   targetName: string;
   onClose: () => void;
   onDone?: () => void;
@@ -26,7 +28,7 @@ export function ReportDialog({
     setLoading(true);
     setError(null);
     try {
-      await api("/api/report", { body: { targetUserId, type, description } });
+      await api("/api/report", { body: { targetUserId, targetPostId, type, description } });
       setDone(true);
       onDone?.();
     } catch (cause) {

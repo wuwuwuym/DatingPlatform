@@ -1,9 +1,9 @@
 # 校园同频 · 校园学生交友平台 MVP
 
-面向**同校大学生**的轻量交友平台：学校 + 学号一次性核验 → 完善 MBTI/星座/性格/爱好 → 同校匹配（可解释评分）→ 互关成好友 → 私聊 → 每日打卡解锁成就 → 举报与极简管理后台。
+面向**同校大学生**的轻量交友平台：学校 + 学号一次性核验 → 完善 MBTI/星座/性格/爱好 → 同校匹配（可解释评分）→ 互关成好友 → 私聊 → 每日打卡解锁成就 → **校园圈分享日常** → 举报与极简管理后台。
 
 > 参赛方向：校园 / 垂直社区全栈 MVP 平台。
-> 核心边界：**学号只核验不流转，匹配有规则可解释，聊天仅好友可见，打卡轻量可演示，全栈闭环可验收。**
+> 核心边界：**学号只核验不流转，匹配有规则可解释，聊天仅好友可见，打卡轻量可演示，校园圈同校可见且发布即审核，全栈闭环可验收。**
 
 ---
 
@@ -12,7 +12,7 @@
 ```bash
 pnpm install
 pnpm db:migrate      # 建表 + RLS + 基础数据（内置 PGlite，无需安装数据库）
-pnpm db:seed         # 可选：写入 8 个演示用户、好友关系、会话与打卡记录
+pnpm db:seed         # 可选：写入 8 个演示用户、好友关系、会话、打卡与校园圈动态
 pnpm dev             # http://localhost:3100
 ```
 
@@ -24,8 +24,8 @@ pnpm dev             # http://localhost:3100
 
 | 学号 | 昵称 | 说明 |
 | --- | --- | --- |
-| `20210001` | 林小满 | 已与 2 位好友建立关系，有会话与历史打卡（连续 2 天，今天打卡即可解锁「初识火花」） |
-| `20210002` ~ `20210008` | — | 同校可匹配用户，用于体验推荐与互关 |
+| `20210001` | 林小满 | 已与 2 位好友建立关系，有会话、历史打卡（连续 2 天，今天打卡即可解锁「初识火花」）与校园圈动态 |
+| `20210002` ~ `20210008` | — | 同校可匹配用户，用于体验推荐、互关、校园圈点赞评论与关注作者 |
 
 统一密码：`<REDACTED>`。
 
@@ -59,7 +59,7 @@ pnpm admin:passcode
 src/
   app/
     (auth)/            登录、注册
-    (app)/             受保护页面：发现 / 好友 / 消息 / 打卡 / 我的 / 资料
+    (app)/             受保护页面：发现 / 校园圈 / 好友 / 消息 / 打卡 / 我的 / 资料
     admin/             极简管理后台
     api/               REST 接口（认证、资料、匹配、社交、聊天、打卡、举报、管理）
   components/          设计系统与业务组件
@@ -76,8 +76,9 @@ docs/                  设计说明与验收对照
 1. 所有业务表开启 `ENABLE ROW LEVEL SECURITY`，策略对象是应用角色 `app_authenticated`。
 2. 每个用户请求在事务内执行 `set_config('role', 'app_authenticated')` 与 `set_config('app.user_id', <uid>, true)`；**没有 `app.user_id` 时所有策略一律拒绝**。
 3. 会话、消息、打卡、推荐、同意记录都按参与者过滤；`identity_verifications` 与 `verification_codes` 对应用角色**没有任何策略**，只有服务端系统路径（注册、登录）能访问。
-4. `users.password_hash` 用列级权限隔离，应用角色连读都读不到；`users.status/role` 也不能被应用角色直接改，只能通过 `app.mark_profile_matchable()` 这个带完整性校验的 `SECURITY DEFINER` 函数升级。
-5. 管理员路径走表 owner（绕过 RLS），但必须在服务端通过管理员会话校验。
+4. 校园圈动态按 `school_id = 当前学校` 过滤，作者可见自己的全部状态；评论与点赞通过「动态是否可见」二次收敛，因此动态被隐藏后，其评论与点赞对同校成员同时失效。
+5. `users.password_hash` 用列级权限隔离，应用角色连读都读不到；`users.status/role` 也不能被应用角色直接改，只能通过 `app.mark_profile_matchable()` 这个带完整性校验的 `SECURITY DEFINER` 函数升级。
+6. 管理员路径走表 owner（绕过 RLS），但必须在服务端通过管理员会话校验。
 
 对应的可执行证据见 `tests/db.test.ts`：越权读取返回 0 行、伪造发送者被拒、列级更新被拒、无身份上下文读不到任何数据。
 
@@ -95,7 +96,19 @@ docs/                  设计说明与验收对照
 
 原始分上限 53，线性归一化到 0–100，并取贡献最高的 2–3 项生成中文理由（例如「你们都想聊 摄影、咖啡」）。每次推荐会写入 `match_recommendations` 快照，便于复盘与展示。
 
-## 6. 接口清单
+## 6. 校园圈与内容审核
+
+- **时间线**：`/circle` 默认展示同校动态，可切换「我关注的」；按 `(created_at, id)` 游标分页，每页 20 条。
+- **互动**：点赞（幂等切换）、评论（作者可删除自己的评论）、关注作者（复用 `follows`，互关即成为好友并解锁私聊）。
+- **媒体**：图片在前端压缩为 ≤360KB 的 JPEG data URL（最多 4 张）；视频仅支持 https 外链（每条 1 个）；图文不混排。时间线里的图片可点击全屏查看，多图支持左右切换与 Esc 关闭。
+- **删除**：作者删除后动态立即从时间线移除（数据库保留 `removed` 状态，供管理端追溯与举报处理）。
+- **发布即审核（三层）**：
+  1. **屏蔽词**：正文与评论先做 NFKC 归一化并去除空白、标点、零宽字符，再匹配 `sensitive_words`；命中返回 `422 SENSITIVE_CONTENT`，内容**不落库**。`0003_circle.sql` 预置了常见侮辱性词汇，管理端可继续增删。
+  2. **结构校验**：正文 ≤800 字、评论 ≤300 字，媒体数量/格式/大小受限，图片必须是 jpeg/png/webp 的 data URL，视频必须是 https。
+  3. **发布后治理**：同校成员可一键举报动态；管理端可隐藏 / 恢复 / 删除；封禁账号时其已发布动态自动隐藏；被拉黑作者的内容不进入对方时间线。
+- **证据**：`tests/domain.test.ts`（词表与混淆匹配、媒体校验）、`tests/db.test.ts`（跨校隔离、隐藏后评论与点赞同时失效）、`tests/services.test.ts`（发布 → 点赞 → 评论 → 举报 → 隐藏/恢复 → 封禁）以及 `pnpm verify:e2e`。
+
+## 7. 接口清单
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
@@ -112,17 +125,23 @@ docs/                  设计说明与验收对照
 | POST | `/api/conversations/open` | 打开或创建与好友的会话 |
 | GET / POST | `/api/conversations/{id}/messages` | 读取 / 发送消息（敏感词拦截） |
 | GET | `/api/conversations/{id}/stream` | SSE 实时消息 |
+| GET / POST | `/api/posts` | 校园圈时间线（`scope=all\|following`，游标分页）/ 发布动态 |
+| DELETE | `/api/posts/{id}` | 作者删除自己的动态 |
+| POST | `/api/posts/{id}/like` | 点赞 / 取消点赞 |
+| GET / POST | `/api/posts/{id}/comments` | 评论列表 / 发表评论 |
+| DELETE | `/api/posts/{id}/comments/{commentId}` | 删除自己的评论 |
 | POST | `/api/checkin` | 好友每日打卡，返回连续天数与解锁成就 |
 | GET | `/api/achievements` | 成就列表与进度 |
-| POST | `/api/report` | 一键举报 |
+| POST | `/api/report` | 一键举报（用户或动态） |
 | GET / POST / DELETE | `/api/admin/session` | 管理端登录状态 / 登录 / 退出 |
 | GET / POST | `/api/admin/reports` | 举报列表 / 更新处理状态 |
+| GET / POST | `/api/admin/posts` | 校园圈动态列表 / 隐藏、恢复、删除 |
 | POST | `/api/admin/users` | 封禁 / 解封 |
 | GET / POST / DELETE | `/api/admin/words` | 敏感词维护 |
 | GET / POST | `/api/admin/codes` | 生成与查看演示核验码 |
 | GET | `/api/admin/overview` | 后台概览 + 敏感词 |
 
-## 7. 测试与验收
+## 8. 测试与验收
 
 ```bash
 pnpm lint        # ESLint
@@ -132,11 +151,13 @@ pnpm verify:e2e  # 需要先启动 pnpm dev，跑真实 HTTP 全链路
 pnpm build       # 生产构建
 ```
 
-`pnpm verify:e2e` 会创建临时账号并完整走一遍：注册 → 资料 → 推荐 → 关注 → 互关 → 聊天 → 未读 → 敏感词 → 打卡 → 重复打卡 → 举报 → 管理端处理 → 封禁 → 封禁后登录失败 → 页面渲染。详见 `docs/acceptance.md`。
+`pnpm verify:e2e` 会创建临时账号并完整走一遍：注册 → 资料 → 推荐 → 关注 → 互关 → 聊天 → 未读 → 敏感词 → 打卡 → 重复打卡 → 校园圈发布/可见性/关注筛选/点赞/评论 → 动态举报 → 管理端隐藏与恢复 → 用户举报 → 封禁 → 封禁后登录失败 → 页面渲染。详见 `docs/acceptance.md`。
 
-## 8. 切换到 Supabase
+> 验收脚本会留下以「验收」开头的临时账号及其动态。演示前若需要干净数据，删除 `.data/pgdata` 后重新执行 `pnpm db:migrate && pnpm db:seed`。
 
-1. 在 Supabase SQL Editor 依次执行 `supabase/migrations/0001_init.sql`、`0002_seed.sql`。
+## 9. 切换到 Supabase
+
+1. 在 Supabase SQL Editor 依次执行 `supabase/migrations/0001_init.sql`、`0002_seed.sql`、`0003_circle.sql`、`0004_circle_policy.sql`。
 2. 在 `.env.local` 或部署平台配置：
 
 ```env
@@ -151,25 +172,30 @@ ADMIN_PASSCODE=<管理口令>
 
 部署到 Vercel 时把以上变量加入项目环境变量即可；设置 `DATABASE_URL` 后不再使用本地 PGlite 文件库。
 
-## 9. 与需求文档的四处偏离（均已评估）
+## 10. 与需求文档的偏离（均已评估）
 
 1. **Realtime 用 SSE**：需求写 Supabase Realtime，本地优先方案下改为服务端轮询 + SSE 推送（约 1.2s），接口与 UI 行为一致，`src/app/api/conversations/[id]/stream/route.ts` 是唯一替换点。
 2. **头像不接对象存储**：前端压缩为 ≤160px 的 data URL 存 `avatar_url`，避免 Vercel 只读文件系统与额外密钥。
 3. **管理端为口令登录**：不做多级权限，服务端校验 `users.role = 'admin'` + 管理会话 Cookie。
 4. **学号哈希带 pepper**：需求写「哈希存储」，实现为 `HMAC-SHA256(pepper, school:student_no)`，比裸 SHA-256 抗彩虹表；语义仍是「只存哈希、不存明文」。
+5. **动态媒体不接对象存储**：图片在前端压缩后以 data URL 存入 `posts.media`，视频只保存 https 外链（播放器直接引用），因此不做服务端上传、转码与审核队列；接口形状可在接入对象存储后保持不变。
 
-## 10. 隐私与安全
+## 11. 隐私与安全
 
 - 学号明文不落库、不进日志、不出现在任何响应中（仅 `maskStudentNo` 用于日志脱敏）。
 - 密码使用 scrypt（N=16384, r=8, p=1）+ 随机盐，参数随哈希存储。
 - 会话 Cookie：`httpOnly`、`sameSite=lax`、生产环境 `secure`、HMAC 签名、7 天过期。
-- 敏感词在发送前做 NFKC 归一化并去除空白/标点/零宽字符，`代 考`、`代-考` 同样拦截。
-- 封禁在服务端全链路生效：登录、推荐、关注、会话、消息、打卡均拒绝。
-- 频率限制：注册、登录、发消息、打卡、举报、管理端操作均有进程内滑窗限流（多实例部署请换 Redis）。
+- 敏感词在发送前做 NFKC 归一化并去除空白/标点/零宽字符，`代 考`、`代-考` 同样拦截；私聊与校园圈共用同一份词表。
+- 校园圈内容只对同校可见；发布要求资料完整（进入匹配池），评论/点赞同样要求登录且同校，命中屏蔽词直接拒收。
+- 图片仅接受 jpeg/png/webp 的 data URL，视频仅接受 https 外链，避免 `javascript:` 等协议注入。
+- 封禁在服务端全链路生效：登录、推荐、关注、会话、消息、打卡、校园圈发布均拒绝；封禁时已发布动态自动隐藏。
+- 频率限制：注册、登录、发消息、发动态、评论、打卡、举报、管理端操作均有进程内滑窗限流（多实例部署请换 Redis）。
 
-## 11. 已知边界（MVP 范围内）
+## 12. 已知边界（MVP 范围内）
 
 - 单实例部署；进程内限流与 PGlite 均为单节点方案。
-- 消息历史一次最多 100 条，未做分页加载。
-- 不做群聊、动态广场、支付、精确地理位置、通讯录导入。
+- 消息历史一次最多 100 条，未做分页加载；校园圈时间线为游标分页，每页 20 条。
+- 不做群聊、支付、精确地理位置、通讯录导入。
+- 校园圈视频只支持 https 外链，不做上传与转码；图片为压缩 data URL，单条最多 4 张。
+- 审核为「发布前屏蔽词 + 发布后人工处理」，未接入第三方内容安全服务或图片识别。
 - 管理端不做举报处理通知（P1）。

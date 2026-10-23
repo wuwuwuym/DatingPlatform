@@ -223,6 +223,74 @@ async function main(): Promise<void> {
   assert.equal(duplicateCheckin.error?.code, "ALREADY_CHECKED_IN");
   pass("AC-06 当日重复打卡被唯一约束拒绝");
 
+  const pixel =
+    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
+  const postResult = await alice.expectOk<{ post: { id: string; media: unknown[] } }>("/api/posts", {
+    body: {
+      body: `校园圈的验收动态 ${stamp}：傍晚操场的光很好看`,
+      media: [{ type: "image", url: pixel }],
+    },
+  });
+  assert.equal(postResult.post.media.length, 1);
+  pass("校园圈：发布带图片的动态（图片以压缩 data URL 存储）");
+
+  const bobFeed = await bob.expectOk<{
+    items: { id: string; author: { nickname: string }; following: boolean }[];
+  }>("/api/posts");
+  const bobPost = bobFeed.items.find((item) => item.id === postResult.post.id);
+  assert.ok(bobPost, "Bob should see Alice's post in the same-school feed");
+  assert.equal(bobPost.following, true);
+  pass("校园圈：同校成员可见动态，并显示与作者的关注关系");
+
+  const followingFeed = await bob.expectOk<{ items: { id: string }[] }>(
+    "/api/posts?scope=following",
+  );
+  assert.ok(followingFeed.items.some((item) => item.id === postResult.post.id));
+  pass("校园圈：仅看关注的人时可筛出该作者的动态");
+
+  const blockedPost = await alice.expectStatus("/api/posts", 422, {
+    body: { body: "你这傻 逼，别再来找我", media: [] },
+  });
+  assert.equal(blockedPost.error?.code, "SENSITIVE_CONTENT");
+  pass("校园圈：侮辱性屏蔽词直接拒收（空格规避同样命中）");
+
+  const likeResult = await bob.expectOk<{ liked: boolean; likeCount: number }>(
+    `/api/posts/${postResult.post.id}/like`,
+    { body: { liked: true } },
+  );
+  assert.equal(likeResult.liked, true);
+  assert.equal(likeResult.likeCount, 1);
+  pass("校园圈：同校成员可以点赞");
+
+  await bob.expectOk<{ comment: { body: string } }>(
+    `/api/posts/${postResult.post.id}/comments`,
+    { body: { body: "拍得真好看" } },
+  );
+  const comments = await alice.expectOk<{ comments: { body: string }[] }>(
+    `/api/posts/${postResult.post.id}/comments`,
+  );
+  assert.ok(comments.comments.some((item) => item.body === "拍得真好看"));
+  pass("校园圈：评论写入并可按动态读取");
+
+  const aliceFeed = await alice.expectOk<{
+    items: { id: string; likeCount: number; commentCount: number }[];
+  }>("/api/posts");
+  const alicePost = aliceFeed.items.find((item) => item.id === postResult.post.id)!;
+  assert.equal(alicePost.likeCount, 1);
+  assert.equal(alicePost.commentCount, 1);
+  pass("校园圈：点赞数与评论数回传到时间线");
+
+  const postReport = await bob.expectOk<{ id: string }>("/api/report", {
+    body: {
+      targetPostId: postResult.post.id,
+      type: "inappropriate",
+      description: "验收脚本提交的动态举报",
+    },
+  });
+  assert.ok(postReport.id);
+  pass("校园圈：动态可被举报（进入管理端队列）");
+
   const report = await alice.expectOk<{ id: string }>("/api/report", {
     body: {
       targetUserId: bobProfile.profile.id,
@@ -238,11 +306,29 @@ async function main(): Promise<void> {
 
   const admin = new Client();
   await admin.expectOk("/api/admin/session", { body: { passcode } });
-  const adminReports = await admin.expectOk<{ reports: { id: string; target: { id: string } }[] }>(
-    "/api/admin/reports",
-  );
+  const adminReports = await admin.expectOk<{
+    reports: { id: string; target: { kind: string; id: string; excerpt?: string } }[];
+  }>("/api/admin/reports");
   assert.ok(adminReports.reports.some((item) => item.id === report.id));
   pass("AC-08 管理端可查看举报列表");
+
+  const postReportRow = adminReports.reports.find((item) => item.id === postReport.id);
+  assert.ok(postReportRow, "post report should reach the admin queue");
+  assert.equal(postReportRow.target.kind, "post");
+  assert.ok((postReportRow.target.excerpt ?? "").length > 0);
+  pass("校园圈：管理端举报列表带动态摘要");
+
+  await admin.expectOk("/api/admin/posts", {
+    body: { postId: postResult.post.id, action: "hide" },
+  });
+  const hiddenFeed = await bob.expectOk<{ items: { id: string }[] }>("/api/posts");
+  assert.ok(!hiddenFeed.items.some((item) => item.id === postResult.post.id));
+  const ownFeed = await alice.expectOk<{ items: { id: string; status: string }[] }>("/api/posts");
+  assert.equal(ownFeed.items.find((item) => item.id === postResult.post.id)?.status, "hidden");
+  await admin.expectOk("/api/admin/posts", {
+    body: { postId: postResult.post.id, action: "restore" },
+  });
+  pass("校园圈：管理员隐藏动态后同校不可见、作者仍可见，并可恢复");
 
   await admin.expectOk("/api/admin/reports", {
     body: { reportId: report.id, status: "resolved" },
@@ -274,12 +360,17 @@ async function main(): Promise<void> {
   }
   pass("页面可访问：首页 / 登录 / 注册");
 
-  for (const path of ["/match", "/friends", "/chat", "/checkin", "/me", "/profile"]) {
+  for (const path of ["/match", "/circle", "/friends", "/chat", "/checkin", "/me", "/profile"]) {
     const page = await alice.page(path);
     assert.equal(page.status, 200, `${path} expected 200, got ${page.status}`);
     assert.ok(page.html.includes("星海大学"), `${path} should render inside the app shell`);
   }
-  pass("登录态页面可服务端渲染：发现 / 好友 / 消息 / 打卡 / 我的 / 资料");
+  pass("登录态页面可服务端渲染：发现 / 校园圈 / 好友 / 消息 / 打卡 / 我的 / 资料");
+
+  const circlePage = await alice.page("/circle");
+  assert.ok(circlePage.html.includes("分享此刻的校园生活"), "circle composer should render");
+  assert.ok(circlePage.html.includes("校园圈"), "nav should expose the circle entry");
+  pass("校园圈页面渲染出发布器与底部导航入口");
 
   const anonymousMatch = await fetch(`${BASE}/match`, { redirect: "manual" });
   assert.ok(
@@ -299,7 +390,9 @@ async function main(): Promise<void> {
     assert.ok(demoConversations.items.length >= 1);
     const demoFriends = await demo.expectOk<{ friends: unknown[] }>("/api/friends");
     assert.ok(demoFriends.friends.length >= 2);
-    pass("演示账号 20210001 可直接登录，自带好友与会话");
+    const demoFeed = await demo.expectOk<{ items: unknown[] }>("/api/posts");
+    assert.ok(demoFeed.items.length >= 3);
+    pass("演示账号 20210001 可直接登录，自带好友、会话与校园圈动态");
   } else {
     console.log("  - 跳过演示账号检查（数据库中还没有 seed 数据）");
   }

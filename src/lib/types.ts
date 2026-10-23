@@ -4,6 +4,7 @@ export type Gender = "male" | "female";
 export type MatchPref = "same" | "opposite";
 export type ReportType = "harassment" | "fake_identity" | "inappropriate" | "other";
 export type ReportStatus = "pending" | "resolved" | "dismissed";
+export type PostStatus = "published" | "hidden" | "removed";
 
 export interface PublicProfile {
   id: string;
@@ -86,12 +87,73 @@ export interface MessageItem {
   mine: boolean;
 }
 
+export interface CircleMedia {
+  type: "image" | "video";
+  url: string;
+}
+
+export interface PostAuthor {
+  id: string;
+  nickname: string;
+  avatarUrl: string | null;
+  mbti: string | null;
+  department: string | null;
+}
+
+export interface PostItem {
+  id: string;
+  body: string;
+  media: CircleMedia[];
+  status: PostStatus;
+  createdAt: string;
+  author: PostAuthor;
+  likeCount: number;
+  commentCount: number;
+  liked: boolean;
+  following: boolean;
+  mine: boolean;
+}
+
+export interface PostCommentItem {
+  id: string;
+  body: string;
+  createdAt: string;
+  author: { id: string; nickname: string; avatarUrl: string | null };
+  mine: boolean;
+}
+
+export interface CircleFeed {
+  items: PostItem[];
+  nextCursor: string | null;
+}
+
+export interface AdminPostItem {
+  id: string;
+  body: string;
+  media: CircleMedia[];
+  status: PostStatus;
+  createdAt: string;
+  author: { id: string; nickname: string };
+  likeCount: number;
+  commentCount: number;
+}
+
 export interface CheckinResult {
   streakDays: number;
   checkedInToday: boolean;
   partnerCheckedInToday: boolean;
   unlocked: AchievementItem[];
 }
+
+export type ReportTarget =
+  | { kind: "user"; id: string; nickname: string; status: UserStatus }
+  | {
+      kind: "post";
+      id: string;
+      nickname: string;
+      status: PostStatus;
+      excerpt: string;
+    };
 
 export interface ReportItem {
   id: string;
@@ -100,7 +162,7 @@ export interface ReportItem {
   status: ReportStatus;
   createdAt: string;
   reporter: { id: string; nickname: string };
-  target: { id: string; nickname: string; status: UserStatus };
+  target: ReportTarget;
 }
 
 export interface AdminOverview {
@@ -110,6 +172,7 @@ export interface AdminOverview {
   pendingReports: number;
   messagesToday: number;
   checkinsToday: number;
+  postsToday: number;
 }
 
 export interface ApiSuccess<T> {

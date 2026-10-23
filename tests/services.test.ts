@@ -11,6 +11,16 @@ import {
   updateReportStatus,
 } from "@/server/services/admin-service";
 import { login, register } from "@/server/services/auth-service";
+import {
+  createComment,
+  createPost,
+  listAdminPosts,
+  listComments,
+  listFeed,
+  moderatePost,
+  removePost,
+  setLike,
+} from "@/server/services/circle-service";
 import { checkin } from "@/server/services/checkin-service";
 import {
   listConversations,
@@ -39,6 +49,9 @@ const DEFAULTS: ProfileUpdateInput = {
   matchGenderPref: "opposite",
   bio: "喜欢记录日常",
 };
+
+const PIXEL =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 
 let counter = 0;
 
@@ -378,5 +391,195 @@ describe("campus MVP service flow", () => {
     );
     expect(rows).toHaveLength(3);
     expect(rows.every((row) => row.agreed_at instanceof Date)).toBe(true);
+  });
+
+  it("C-01: same-school feed supports publishing, following, likes and comments", async () => {
+    const author = await makeUser({ nickname: "圈主" });
+    const peer = await makeUser({ gender: "male", nickname: "同校同学" });
+    const remote = await makeUser({ gender: "male", nickname: "外校同学" }, { schoolId: OTHER_SCHOOL_ID });
+
+    const post = await createPost(author.user, {
+      body: "食堂新出的桂花糖藕好吃，有人一起吗",
+      media: [{ type: "image", url: PIXEL }],
+    });
+    expect(post.media).toHaveLength(1);
+    expect(post.mine).toBe(true);
+
+    const peerFeed = await listFeed(peer.user);
+    const peerPost = peerFeed.items.find((item) => item.id === post.id)!;
+    expect(peerPost.author.nickname).toBe("圈主");
+    expect(peerPost.following).toBe(false);
+    expect(peerPost.likeCount).toBe(0);
+
+    const remoteFeed = await listFeed(remote.user);
+    expect(remoteFeed.items.map((item) => item.id)).not.toContain(post.id);
+
+    await followUser(peer.user, author.id);
+    const followingFeed = await listFeed(peer.user, { scope: "following" });
+    const followedPost = followingFeed.items.find((item) => item.id === post.id)!;
+    expect(followedPost.following).toBe(true);
+
+    const liked = await setLike(peer.user, post.id, true);
+    expect(liked).toEqual({ liked: true, likeCount: 1 });
+    const likedFeed = await listFeed(peer.user);
+    expect(likedFeed.items.find((item) => item.id === post.id)!.liked).toBe(true);
+
+    const comment = await createComment(peer.user, post.id, { body: "看饿了，明天去试试" });
+    expect(comment.mine).toBe(true);
+
+    const comments = await listComments(author.user, post.id);
+    expect(comments.map((item) => item.body)).toEqual(["看饿了，明天去试试"]);
+    const authorFeed = await listFeed(author.user);
+    expect(authorFeed.items.find((item) => item.id === post.id)!.commentCount).toBe(1);
+
+    const foreignLike = await expectApiError(setLike(remote.user, post.id, true), "POST_NOT_FOUND");
+    expect(foreignLike.status).toBe(404);
+    await expectApiError(
+      createComment(remote.user, post.id, { body: "路过看看" }),
+      "POST_NOT_FOUND",
+    );
+    await expectApiError(
+      createComment(peer.user, post.id, { body: "傻 逼才去食堂" }),
+      "SENSITIVE_CONTENT",
+    );
+    await expectApiError(
+      createPost(peer.user, { body: "需要代考的联系我", media: [] }),
+      "SENSITIVE_CONTENT",
+    );
+  });
+
+  it("C-02: moderating a post removes it from peers while the author keeps it", async () => {
+    const author = await makeUser({ nickname: "待审核作者" });
+    const peer = await makeUser({ gender: "male", nickname: "审核旁观者" });
+
+    const post = await createPost(author.user, { body: "周末一起去江边骑车", media: [] });
+
+    const hidden = await moderatePost(post.id, "hide");
+    expect(hidden.status).toBe("hidden");
+
+    const peerFeed = await listFeed(peer.user);
+    expect(peerFeed.items.map((item) => item.id)).not.toContain(post.id);
+
+    const ownFeed = await listFeed(author.user);
+    const ownPost = ownFeed.items.find((item) => item.id === post.id)!;
+    expect(ownPost.status).toBe("hidden");
+
+    await expectApiError(setLike(peer.user, post.id, true), "POST_NOT_FOUND");
+    await expectApiError(
+      createComment(peer.user, post.id, { body: "还能评论吗" }),
+      "POST_NOT_FOUND",
+    );
+
+    await moderatePost(post.id, "restore");
+    const restoredFeed = await listFeed(peer.user);
+    expect(restoredFeed.items.map((item) => item.id)).toContain(post.id);
+
+    const adminPosts = await listAdminPosts();
+    expect(adminPosts.some((item) => item.id === post.id)).toBe(true);
+  });
+
+  it("C-03: only the author can remove a post, and removal hides it from peers", async () => {
+    const author = await makeUser({ nickname: "删除者" });
+    const peer = await makeUser({ gender: "male", nickname: "围观者" });
+    const post = await createPost(author.user, { body: "晚霞照片稍后补上", media: [] });
+
+    await expectApiError(removePost(peer.user, post.id), "POST_NOT_FOUND");
+    await removePost(author.user, post.id);
+
+    const ownFeed = await listFeed(author.user);
+    expect(ownFeed.items.map((item) => item.id)).not.toContain(post.id);
+
+    const peerFeed = await listFeed(peer.user);
+    expect(peerFeed.items.map((item) => item.id)).not.toContain(post.id);
+
+    const adminPosts = await listAdminPosts();
+    expect(adminPosts.find((item) => item.id === post.id)!.status).toBe("removed");
+  });
+
+  it("C-04: a reported post reaches the admin queue with its excerpt", async () => {
+    const author = await makeUser({ nickname: "被举报作者" });
+    const reporter = await makeUser({ gender: "male", nickname: "举报同学" });
+    const post = await createPost(author.user, {
+      body: "这条动态会被举报，用来验证管理端队列展示",
+      media: [],
+    });
+
+    const report = await createReport(reporter.user, {
+      targetPostId: post.id,
+      type: "inappropriate",
+      description: "内容不合适",
+    });
+
+    const { adminId } = await adminLogin("test-admin-passcode");
+    const admin = (await findUserById(adminId))!;
+    expect(admin.role).toBe("admin");
+
+    const pending = await listReports("pending");
+    const row = pending.find((item) => item.id === report.id)!;
+    expect(row.target.kind).toBe("post");
+    if (row.target.kind !== "post") throw new Error("expected a post target");
+    expect(row.target.id).toBe(post.id);
+    expect(row.target.excerpt).toContain("这条动态会被举报");
+
+    await expectApiError(
+      createReport(author.user, {
+        targetPostId: post.id,
+        type: "other",
+        description: "自举报",
+      }),
+      "CANNOT_REPORT_SELF",
+    );
+  });
+
+  it("feed cursor pagination keeps pages stable and deduplicated", async () => {
+    const author = await makeUser({ nickname: "多产作者" });
+    const reader = await makeUser({ gender: "male", nickname: "翻页读者" });
+    await followUser(reader.user, author.id);
+
+    const { getDb } = await import("@/server/db");
+    const db = await getDb();
+    await db.withSystem(async (tx) => {
+      for (let index = 0; index < 25; index += 1) {
+        await tx.query(
+          `insert into posts (author_id, school_id, body, created_at)
+           values ($1, (select school_id from users where id = $1), $2,
+                   now() - ($3 || ' minutes')::interval)`,
+          [author.id, `分页动态 ${index}`, String(index)],
+        );
+      }
+    });
+
+    const first = await listFeed(reader.user, { scope: "following" });
+    expect(first.items).toHaveLength(20);
+    expect(first.nextCursor).toBeTruthy();
+
+    const second = await listFeed(reader.user, {
+      scope: "following",
+      cursor: first.nextCursor!,
+    });
+    expect(second.items).toHaveLength(5);
+    expect(second.nextCursor).toBeNull();
+
+    const ids = new Set([...first.items, ...second.items].map((item) => item.id));
+    expect(ids.size).toBe(25);
+    expect(
+      first.items.every(
+        (item, index) => index === 0 || first.items[index - 1]!.createdAt >= item.createdAt,
+      ),
+    ).toBe(true);
+  });
+
+  it("C-05: banning an author also retires their published posts", async () => {
+    const author = await makeUser({ nickname: "违规作者" });
+    const peer = await makeUser({ gender: "male", nickname: "目击者" });
+    const post = await createPost(author.user, { body: "即将被下架的动态", media: [] });
+
+    expect((await listFeed(peer.user)).items.map((item) => item.id)).toContain(post.id);
+
+    await setUserBanned(author.id, true);
+
+    expect((await listFeed(peer.user)).items.map((item) => item.id)).not.toContain(post.id);
+    const adminPosts = await listAdminPosts();
+    expect(adminPosts.find((item) => item.id === post.id)!.status).toBe("hidden");
   });
 });

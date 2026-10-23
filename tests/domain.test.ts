@@ -15,6 +15,13 @@ import {
 import { MATCH_WEIGHTS, scoreMatch, type MatchProfile } from "@/lib/match/score";
 import { findSensitiveWords, normalizeForFilter } from "@/lib/chat/sensitive";
 import {
+  excerptOf,
+  isAllowedImageDataUrl,
+  isAllowedVideoUrl,
+  moderateText,
+  normalizePostMedia,
+} from "@/lib/circle/content";
+import {
   computeStreak,
   dateKey,
   longestStreak,
@@ -205,6 +212,70 @@ describe("sensitive word filter", () => {
   it("returns nothing for clean text", () => {
     expect(findSensitiveWords("下午一起去图书馆吗", words)).toEqual([]);
     expect(normalizeForFilter("Hello, World!")).toBe("helloworld");
+  });
+});
+
+describe("circle content moderation", () => {
+  const words = ["傻逼", "代考", "开盒"];
+  const pixel =
+    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
+  it("blocks insult words, including spaced or decorated obfuscation", () => {
+    expect(moderateText("你这个傻逼", words)).toEqual(["傻逼"]);
+    expect(moderateText("傻 逼", words)).toEqual(["傻逼"]);
+    expect(moderateText("傻\u200b逼", words)).toEqual(["傻逼"]);
+    expect(moderateText("帮你代-考", words)).toEqual(["代考"]);
+  });
+
+  it("lets ordinary campus chatter through", () => {
+    expect(moderateText("食堂新出的桂花糖藕好吃，有人一起吗", words)).toEqual([]);
+    expect(moderateText("今晚操场有流星雨，记得抬头", words)).toEqual([]);
+  });
+
+  it("accepts only compressed raster image data URLs", () => {
+    expect(isAllowedImageDataUrl(pixel)).toBe(true);
+    expect(isAllowedImageDataUrl("https://example.com/a.jpg")).toBe(false);
+    expect(isAllowedImageDataUrl("data:image/svg+xml;base64,PHN2Zz4=")).toBe(false);
+    expect(isAllowedImageDataUrl(`data:image/png;base64,${"A".repeat(400_001)}`)).toBe(false);
+  });
+
+  it("accepts only https video links", () => {
+    expect(isAllowedVideoUrl("https://example.com/clip.mp4")).toBe(true);
+    expect(isAllowedVideoUrl("http://example.com/clip.mp4")).toBe(false);
+    expect(isAllowedVideoUrl("javascript:alert(1)")).toBe(false);
+    expect(isAllowedVideoUrl("not a url")).toBe(false);
+  });
+
+  it("normalises media and rejects mixed or oversized attachments", () => {
+    const twoImages = normalizePostMedia([
+      { type: "image", url: pixel },
+      { type: "image", url: pixel },
+    ]);
+    expect(twoImages.ok).toBe(true);
+    if (twoImages.ok) expect(twoImages.media).toHaveLength(2);
+
+    const video = normalizePostMedia([{ type: "video", url: "https://example.com/a.mp4" }]);
+    expect(video.ok).toBe(true);
+
+    const mixed = normalizePostMedia([
+      { type: "image", url: pixel },
+      { type: "video", url: "https://example.com/a.mp4" },
+    ]);
+    expect(mixed.ok).toBe(false);
+
+    const twoVideos = normalizePostMedia([
+      { type: "video", url: "https://example.com/a.mp4" },
+      { type: "video", url: "https://example.com/b.mp4" },
+    ]);
+    expect(twoVideos.ok).toBe(false);
+
+    const tooMany = normalizePostMedia(Array.from({ length: 5 }, () => ({ type: "image" as const, url: pixel })));
+    expect(tooMany.ok).toBe(false);
+  });
+
+  it("builds a compact single-line excerpt for moderation lists", () => {
+    expect(excerptOf("  今天  去了图书馆\n还借了两本书  ")).toBe("今天 去了图书馆 还借了两本书");
+    expect(excerptOf("很长的内容".repeat(20), 10)).toHaveLength(11);
   });
 });
 

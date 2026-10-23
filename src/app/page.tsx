@@ -6,6 +6,7 @@ const HIGHLIGHTS = [
   { title: "只同校", body: "学校 + 学号一次性核验，匹配池只对同校同学开放。" },
   { title: "可解释的匹配", body: "共同爱好、MBTI 维度、性格标签加权，给出 0–100 分和理由。" },
   { title: "好友才可私聊", body: "互相关注成为好友后解锁聊天，敏感词拦截与一键举报。" },
+  { title: "校园圈", body: "同校动态、图片与视频分享，点赞评论，屏蔽词先审后发。" },
 ];
 
 export default async function LandingPage() {
@@ -31,7 +32,7 @@ export default async function LandingPage() {
             遇见同频的人。
           </h1>
           <p className="mt-4 max-w-[300px] text-[14px] leading-6 text-muted">
-            用一次身份核验，换一个真实的同校社交圈。资料匹配、互关成友、每日打卡，把「加个好友」变成有来有往的关系。
+            用一次身份核验，换一个真实的同校社交圈。资料匹配、互关成友、每日打卡，再到校园圈分享日常，把「加个好友」变成有来有往的关系。
           </p>
         </div>
 

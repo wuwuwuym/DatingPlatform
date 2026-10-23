@@ -1,13 +1,26 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { hashStudentNo } from "../src/lib/auth/identity";
 import { hashPassword } from "../src/lib/auth/password";
 import { dateKey, shiftDateKey } from "../src/lib/checkin/streak";
 import { config } from "../src/lib/config";
 import { pairKeyOf } from "../src/lib/pair";
+import type { CircleMedia } from "../src/lib/types";
 import { getDb } from "../src/server/db";
 import { runMigrations } from "../src/server/migrate";
 
 const DEMO_PASSWORD = "<REDACTED>";
 const SCHOOL_ID = "5c000000-0000-4000-8000-000000000001";
+
+/** Reads a bundled demo photo and inlines it the same way the composer does. */
+function readDemoImage(fileName: string): CircleMedia | null {
+  try {
+    const buffer = readFileSync(path.join(process.cwd(), "public", "circle", fileName));
+    return { type: "image", url: `data:image/jpeg;base64,${buffer.toString("base64")}` };
+  } catch {
+    return null;
+  }
+}
 
 interface DemoProfile {
   studentNo: string;
@@ -210,6 +223,9 @@ async function main(): Promise<void> {
   const linnan = ids.get("林小满")!;
   const yinuo = ids.get("陈一诺")!;
   const suci = ids.get("苏辞")!;
+  const guwan = ids.get("顾晚")!;
+  const jiangye = ids.get("江野")!;
+  const yining = ids.get("温以宁")!;
 
   await db.withSystem(async (tx) => {
     for (const partner of [yinuo, suci]) {
@@ -226,6 +242,12 @@ async function main(): Promise<void> {
       );
     }
 
+    // 单向关注：让「我关注的」时间线也有内容。
+    await tx.query(
+      "insert into follows (follower_id, followee_id) values ($1, $2) on conflict do nothing",
+      [linnan, guwan],
+    );
+
     const [a, b] = linnan < yinuo ? [linnan, yinuo] : [yinuo, linnan];
     const conversation = await tx.query<{ id: string }>(
       `insert into conversations (user_a, user_b) values ($1, $2)
@@ -241,12 +263,18 @@ async function main(): Promise<void> {
       [yinuo, "太好了，我马上到。"],
     ];
 
-    for (const [index, [sender, content]] of seeds.entries()) {
-      await tx.query(
-        `insert into messages (conversation_id, sender_id, content, created_at)
-         values ($1, $2, $3, now() - ($4 || ' minutes')::interval)`,
-        [conversationId, sender, content, String(60 - index * 10)],
-      );
+    const existingMessages = await tx.query<{ count: string }>(
+      "select count(*)::text as count from messages where conversation_id = $1",
+      [conversationId],
+    );
+    if (existingMessages[0]?.count === "0") {
+      for (const [index, [sender, content]] of seeds.entries()) {
+        await tx.query(
+          `insert into messages (conversation_id, sender_id, content, created_at)
+           values ($1, $2, $3, now() - ($4 || ' minutes')::interval)`,
+          [conversationId, sender, content, String(60 - index * 10)],
+        );
+      }
     }
 
     const today = dateKey();
@@ -258,6 +286,88 @@ async function main(): Promise<void> {
          on conflict do nothing`,
         [pairKey, linnan, yinuo, shiftDateKey(today, offset)],
       );
+    }
+
+    // ---- 校园圈演示内容（已有动态时跳过，避免重复灌入）----
+    const existingPosts = await tx.query<{ count: string }>(
+      "select count(*)::text as count from posts",
+    );
+    if (existingPosts[0]?.count === "0") {
+      const sunset = readDemoImage("sunset.jpg");
+      const library = readDemoImage("library.jpg");
+
+      const seedPosts: {
+        author: string;
+        body: string;
+        media: CircleMedia[];
+        hoursAgo: number;
+      }[] = [
+        {
+          author: yinuo,
+          body: "闭馆前最后二十分钟，靠窗的位置刚好有光。今天读完了一本一直拖着没看的书。",
+          media: library ? [library] : [],
+          hoursAgo: 3,
+        },
+        {
+          author: linnan,
+          body: "傍晚的操场，云被染成橘子汽水的颜色。按下快门的时候刚好有一群鸟飞过去。",
+          media: sunset ? [sunset] : [],
+          hoursAgo: 6,
+        },
+        {
+          author: jiangye,
+          body: "周末去后山走了 12 公里，秋天的风已经有点凉了。缺一个下次一起的搭子。",
+          media: [],
+          hoursAgo: 26,
+        },
+        {
+          author: guwan,
+          body: "手工书的封面终于缝好了，明天带去工作室给朋友看。",
+          media: [],
+          hoursAgo: 30,
+        },
+        {
+          author: yining,
+          body: "食堂二楼新出的桂花糖藕，甜度刚好。排了十分钟队，值。",
+          media: [],
+          hoursAgo: 50,
+        },
+      ];
+
+      const postIds: string[] = [];
+      for (const post of seedPosts) {
+        const rows = await tx.query<{ id: string }>(
+          `insert into posts (author_id, school_id, body, media, created_at)
+           values ($1, $2, $3, $4::jsonb, now() - ($5 || ' hours')::interval)
+           returning id`,
+          [post.author, SCHOOL_ID, post.body, JSON.stringify(post.media), String(post.hoursAgo)],
+        );
+        postIds.push(rows[0]!.id);
+      }
+
+      const [libraryPost, sunsetPost] = postIds;
+      if (libraryPost) {
+        await tx.query(
+          "insert into post_likes (post_id, user_id) values ($1, $2), ($1, $3) on conflict do nothing",
+          [libraryPost, linnan, guwan],
+        );
+        await tx.query(
+          `insert into post_comments (post_id, author_id, body, created_at)
+           values ($1, $2, $3, now() - interval '2 hours')`,
+          [libraryPost, linnan, "这本我也一直想读，看完借我？"],
+        );
+      }
+      if (sunsetPost) {
+        await tx.query(
+          "insert into post_likes (post_id, user_id) values ($1, $2) on conflict do nothing",
+          [sunsetPost, yinuo],
+        );
+        await tx.query(
+          `insert into post_comments (post_id, author_id, body, created_at)
+           values ($1, $2, $3, now() - interval '4 hours')`,
+          [sunsetPost, yinuo, "橘子汽水味的晚霞，拍得真好。"],
+        );
+      }
     }
   });
 

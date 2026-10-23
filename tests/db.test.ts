@@ -5,6 +5,7 @@ import {
   OTHER_SCHOOL_ID,
   SCHOOL_ID,
   seedConversation,
+  seedPost,
   seedUser,
 } from "./support";
 
@@ -23,7 +24,12 @@ describe("migrations", () => {
     const rows = await db.query<{ version: string }>(
       "select version from schema_migrations order by version",
     );
-    expect(rows.map((r) => r.version)).toEqual(["0001_init.sql", "0002_seed.sql"]);
+    expect(rows.map((r) => r.version)).toEqual([
+      "0001_init.sql",
+      "0002_seed.sql",
+      "0003_circle.sql",
+      "0004_circle_policy.sql",
+    ]);
   });
 
   it("seeds reference data", async () => {
@@ -33,6 +39,11 @@ describe("migrations", () => {
     );
     expect(schools[0]!.count).toBe("5");
     expect(achievements[0]!.count).toBe("3");
+
+    const blocked = await db.query<{ count: string }>(
+      "select count(*)::text from sensitive_words where word in ('傻逼', '代考')",
+    );
+    expect(blocked[0]!.count).toBe("2");
   });
 
   it("stores no plaintext student number column", async () => {
@@ -172,5 +183,151 @@ describe("seed isolation across schools", () => {
     const nicknames = rows.map((r) => r.nickname);
     expect(nicknames).toContain("Local");
     expect(nicknames).not.toContain("Remote");
+  });
+});
+
+describe("campus circle row level security", () => {
+  it("shows published posts to same-school peers only", async () => {
+    const author = await seedUser(db, { nickname: "圈作者" });
+    const peer = await seedUser(db, { nickname: "同校读者" });
+    const remote = await seedUser(db, { nickname: "外校读者", schoolId: OTHER_SCHOOL_ID });
+    const postId = await seedPost(db, author, "今晚操场有流星雨");
+
+    const peerView = await db.withUser(peer, (tx) =>
+      tx.query<{ id: string }>("select id from posts"),
+    );
+    expect(peerView.map((row) => row.id)).toContain(postId);
+
+    const remoteView = await db.withUser(remote, (tx) =>
+      tx.query<{ id: string }>("select id from posts"),
+    );
+    expect(remoteView.map((row) => row.id)).not.toContain(postId);
+
+    const anonymous = await db.withUser(null, (tx) => tx.query("select id from posts"));
+    expect(anonymous).toHaveLength(0);
+  });
+
+  it("hides an author's posts from users who blocked them", async () => {
+    const author = await seedUser(db, { nickname: "被拉黑作者" });
+    const blocker = await seedUser(db, { nickname: "拉黑者" });
+    const observer = await seedUser(db, { nickname: "旁观者" });
+    const postId = await seedPost(db, author, "周末一起去看展");
+
+    await db.withUser(blocker, (tx) =>
+      tx.query("insert into blocks (blocker_id, blocked_id) values ($1, $2)", [
+        blocker,
+        author,
+      ]),
+    );
+
+    const blockedView = await db.withUser(blocker, (tx) =>
+      tx.query<{ id: string }>("select id from posts"),
+    );
+    expect(blockedView.map((row) => row.id)).not.toContain(postId);
+
+    const observerView = await db.withUser(observer, (tx) =>
+      tx.query<{ id: string }>("select id from posts"),
+    );
+    expect(observerView.map((row) => row.id)).toContain(postId);
+  });
+
+  it("requires the caller to be the author for posts, likes and comments", async () => {
+    const author = await seedUser(db, { nickname: "正牌作者" });
+    const other = await seedUser(db, { nickname: "其他人" });
+    const postId = await seedPost(db, author, "图书馆的猫又来了");
+
+    await expect(
+      db.withUser(other, (tx) =>
+        tx.query(
+          `insert into posts (author_id, school_id, body)
+           values ($1, (select school_id from users where id = $1), $2)`,
+          [author, "伪造的动态"],
+        ),
+      ),
+    ).rejects.toThrow(/row-level security/i);
+
+    const updated = await db.withUser(other, (tx) =>
+      tx.query("update posts set status = 'removed' where id = $1 returning id", [postId]),
+    );
+    expect(updated).toHaveLength(0);
+
+    await expect(
+      db.withUser(other, (tx) =>
+        tx.query("insert into post_likes (post_id, user_id) values ($1, $2)", [postId, author]),
+      ),
+    ).rejects.toThrow(/row-level security/i);
+
+    await db.withUser(other, (tx) =>
+      tx.query("insert into post_comments (post_id, author_id, body) values ($1, $2, $3)", [
+        postId,
+        other,
+        "好可爱",
+      ]),
+    );
+
+    await expect(
+      db.withUser(other, (tx) =>
+        tx.query("insert into post_comments (post_id, author_id, body) values ($1, $2, $3)", [
+          postId,
+          author,
+          "伪造评论",
+        ]),
+      ),
+    ).rejects.toThrow(/row-level security/i);
+  });
+
+  it("does not let an author republish a moderated post", async () => {
+    const author = await seedUser(db, { nickname: "被隐藏作者" });
+    const postId = await seedPost(db, author, "这条被管理员隐藏了", { status: "hidden" });
+
+    await expect(
+      db.withUser(author, (tx) =>
+        tx.query("update posts set status = 'published' where id = $1", [postId]),
+      ),
+    ).rejects.toThrow(/row-level security/i);
+
+    const removed = await db.withUser(author, (tx) =>
+      tx.query("update posts set status = 'removed' where id = $1 returning id", [postId]),
+    );
+    expect(removed).toHaveLength(1);
+  });
+
+  it("hides a moderated post and its comments from peers", async () => {
+    const author = await seedUser(db, { nickname: "待审核作者" });
+    const peer = await seedUser(db, { nickname: "邻居" });
+    const postId = await seedPost(db, author, "这条稍后会被隐藏");
+
+    await db.withUser(peer, (tx) =>
+      tx.query("insert into post_comments (post_id, author_id, body) values ($1, $2, $3)", [
+        postId,
+        peer,
+        "先留个脚印",
+      ]),
+    );
+    expect(
+      await db.withUser(peer, (tx) =>
+        tx.query("select id from post_comments where post_id = $1", [postId]),
+      ),
+    ).toHaveLength(1);
+
+    await db.withSystem((tx) =>
+      tx.query("update posts set status = 'hidden' where id = $1", [postId]),
+    );
+
+    expect(
+      await db.withUser(peer, (tx) =>
+        tx.query("select id from posts where id = $1", [postId]),
+      ),
+    ).toHaveLength(0);
+    expect(
+      await db.withUser(peer, (tx) =>
+        tx.query("select id from post_comments where post_id = $1", [postId]),
+      ),
+    ).toHaveLength(0);
+
+    const authorView = await db.withUser(author, (tx) =>
+      tx.query<{ status: string }>("select status from posts where id = $1", [postId]),
+    );
+    expect(authorView[0]!.status).toBe("hidden");
   });
 });

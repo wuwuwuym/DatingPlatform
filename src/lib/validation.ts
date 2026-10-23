@@ -1,7 +1,18 @@
 import { z } from "zod";
+import {
+  MAX_COMMENT_LENGTH,
+  MAX_IMAGE_DATA_URL_LENGTH,
+  MAX_POST_LENGTH,
+  MAX_POST_MEDIA,
+} from "@/lib/circle/content";
 import { MAX_BIO_LENGTH, MAX_MESSAGE_LENGTH, MAX_NICKNAME_LENGTH, MBTI_TYPES, ZODIAC_SIGNS } from "@/lib/constants";
 
 const zodiacValues = ZODIAC_SIGNS.map((item) => item.value) as [string, ...string[]];
+
+const mediaSchema = z.object({
+  type: z.enum(["image", "video"]),
+  url: z.string().min(1, "媒体内容为空").max(MAX_IMAGE_DATA_URL_LENGTH, "媒体内容过大"),
+});
 
 export const registerSchema = z.object({
   schoolId: z.string().uuid("请选择学校"),
@@ -53,11 +64,43 @@ export const checkinSchema = z.object({
   friendId: z.string().uuid("请选择好友"),
 });
 
-export const reportSchema = z.object({
-  targetUserId: z.string().uuid("请选择举报对象"),
-  type: z.enum(["harassment", "fake_identity", "inappropriate", "other"]),
-  description: z.string().trim().max(300, "说明最多 300 字").default(""),
+export const postSchema = z
+  .object({
+    body: z
+      .string()
+      .trim()
+      .max(MAX_POST_LENGTH, `正文最多 ${MAX_POST_LENGTH} 字`)
+      .default(""),
+    media: z.array(mediaSchema).max(MAX_POST_MEDIA, `最多 ${MAX_POST_MEDIA} 个媒体文件`).default([]),
+  })
+  .superRefine((value, ctx) => {
+    if (value.body.length === 0 && value.media.length === 0) {
+      ctx.addIssue({ code: "custom", message: "写点什么，或者配一张图片" });
+    }
+  });
+
+export const commentSchema = z.object({
+  body: z
+    .string()
+    .trim()
+    .min(1, "评论不能为空")
+    .max(MAX_COMMENT_LENGTH, `评论最多 ${MAX_COMMENT_LENGTH} 字`),
 });
+
+export const likeSchema = z.object({
+  liked: z.boolean(),
+});
+
+export const reportSchema = z
+  .object({
+    targetUserId: z.string().uuid().optional(),
+    targetPostId: z.string().uuid().optional(),
+    type: z.enum(["harassment", "fake_identity", "inappropriate", "other"]),
+    description: z.string().trim().max(300, "说明最多 300 字").default(""),
+  })
+  .refine((value) => Boolean(value.targetUserId) !== Boolean(value.targetPostId), {
+    message: "请选择举报对象",
+  });
 
 export const adminLoginSchema = z.object({
   passcode: z.string().min(4, "请输入管理口令").max(128),
@@ -77,6 +120,11 @@ export const adminWordSchema = z.object({
   word: z.string().trim().min(1, "关键词不能为空").max(32, "关键词过长"),
 });
 
+export const adminPostSchema = z.object({
+  postId: z.string().uuid(),
+  action: z.enum(["hide", "restore", "remove"]),
+});
+
 export const adminCodeSchema = z.object({
   count: z.number().int().min(1).max(20).default(1),
   maxUses: z.number().int().min(1).max(10_000).default(1),
@@ -87,5 +135,7 @@ export type RegisterInput = z.infer<typeof registerSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
 export type ProfileUpdateInput = z.infer<typeof profileUpdateSchema>;
 export type SocialActionInput = z.infer<typeof socialActionSchema>;
+export type PostInput = z.infer<typeof postSchema>;
+export type CommentInput = z.infer<typeof commentSchema>;
 export type ReportInput = z.infer<typeof reportSchema>;
 export type AdminCodeInput = z.infer<typeof adminCodeSchema>;

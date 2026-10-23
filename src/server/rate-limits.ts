@@ -12,6 +12,8 @@ export const limiters = {
   login: new RateLimiter(10, 5 * MINUTE),
   verifyCode: new RateLimiter(8, 10 * MINUTE),
   message: new RateLimiter(30, MINUTE),
+  post: new RateLimiter(10, 10 * MINUTE),
+  comment: new RateLimiter(30, 10 * MINUTE),
   checkin: new RateLimiter(30, MINUTE),
   report: new RateLimiter(10, 24 * HOUR),
   adminLogin: new RateLimiter(8, 10 * MINUTE),

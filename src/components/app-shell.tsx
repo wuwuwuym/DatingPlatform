@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Compass, Flame, MessageCircle, User, Users } from "lucide-react";
+import { Compass, Flame, Globe2, MessageCircle, User, Users } from "lucide-react";
 import type { ReactNode } from "react";
 import { Avatar, cn } from "./ui";
 
 const NAV = [
   { href: "/match", label: "发现", icon: Compass },
+  { href: "/circle", label: "校园圈", icon: Globe2 },
   { href: "/friends", label: "好友", icon: Users },
   { href: "/chat", label: "消息", icon: MessageCircle },
   { href: "/checkin", label: "打卡", icon: Flame },
@@ -51,7 +52,7 @@ export function AppShell({
       <main className="animate-rise">{children}</main>
 
       <nav className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-surface/85 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-[460px] items-center justify-between px-6 pt-2.5 pb-[calc(10px+env(safe-area-inset-bottom))]">
+        <div className="mx-auto flex max-w-[460px] items-center justify-between px-4 pt-2.5 pb-[calc(10px+env(safe-area-inset-bottom))]">
           {NAV.map((item) => {
             const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
             const Icon = item.icon;

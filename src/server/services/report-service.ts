@@ -12,14 +12,45 @@ export async function createReport(
 ): Promise<{ id: string }> {
   assertRateLimit(limiters.report.hit(`report:${user.id}`), "举报过于频繁，请稍后再试");
 
-  if (input.targetUserId === user.id) {
+  const db = await getDb();
+
+  if (input.targetPostId) {
+    const posts = await db.withUser(user.id, (tx) =>
+      tx.query<{ authorId: string }>(
+        `select author_id as "authorId" from posts where id = $1`,
+        [input.targetPostId],
+      ),
+    );
+    const post = posts[0];
+    if (!post) {
+      throw new ApiError(404, "POST_NOT_FOUND", "举报的动态不存在或已不可见");
+    }
+    if (post.authorId === user.id) {
+      throw new ApiError(400, "CANNOT_REPORT_SELF", "不能举报自己发布的动态");
+    }
+
+    const rows = await db.withUser(user.id, (tx) =>
+      tx.query<{ id: string }>(
+        `insert into reports (reporter_id, target_user_id, target_post_id, type, description)
+         values ($1, null, $2, $3, $4)
+         returning id`,
+        [user.id, input.targetPostId, input.type, input.description],
+      ),
+    );
+    return { id: rows[0]!.id };
+  }
+
+  const targetUserId = input.targetUserId;
+  if (!targetUserId) {
+    throw new ApiError(400, "VALIDATION_ERROR", "请选择举报对象");
+  }
+  if (targetUserId === user.id) {
     throw new ApiError(400, "CANNOT_REPORT_SELF", "不能举报自己");
   }
 
-  const db = await getDb();
   const target = await db.withSystem((tx) =>
     tx.query<{ id: string }>("select id from users where id = $1 and role = 'user'", [
-      input.targetUserId,
+      targetUserId,
     ]),
   );
   if (target.length === 0) {
@@ -31,7 +62,7 @@ export async function createReport(
       `insert into reports (reporter_id, target_user_id, type, description)
        values ($1, $2, $3, $4)
        returning id`,
-      [user.id, input.targetUserId, input.type, input.description],
+      [user.id, targetUserId, input.type, input.description],
     ),
   );
 

@@ -1,13 +1,17 @@
+import { excerptOf } from "@/lib/circle/content";
 import type {
   AdminOverview,
+  PostStatus,
   ReportItem,
   ReportStatus,
+  ReportTarget,
   UserStatus,
 } from "@/lib/types";
 import type { SessionUser } from "../auth";
 import { getDb } from "../db";
 import { ApiError } from "../http";
 import { iso } from "../sql";
+import { hidePostsOfAuthor } from "./circle-service";
 import { isCorrectAdminPasscode, randomVerificationCode } from "./report-service";
 
 export async function adminLogin(passcode: string): Promise<{ adminId: string }> {
@@ -38,7 +42,8 @@ export async function getOverview(): Promise<AdminOverview> {
          (select count(*)::int from users where status = 'banned') as banned,
          (select count(*)::int from reports where status = 'pending') as "pendingReports",
          (select count(*)::int from messages where created_at >= current_date) as "messagesToday",
-         (select count(*)::int from checkins where checkin_date = current_date) as "checkinsToday"`,
+         (select count(*)::int from checkins where checkin_date = current_date) as "checkinsToday",
+         (select count(*)::int from posts where created_at >= current_date) as "postsToday"`,
       [],
     ),
   );
@@ -49,6 +54,7 @@ export async function getOverview(): Promise<AdminOverview> {
     pendingReports: 0,
     messagesToday: 0,
     checkinsToday: 0,
+    postsToday: 0,
   };
 }
 
@@ -59,7 +65,9 @@ interface RawReportRow {
   status: ReportStatus;
   createdAt: unknown;
   reporter: { id: string; nickname: string };
-  target: { id: string; nickname: string; status: UserStatus };
+  userTarget: { id: string | null; nickname: string | null; status: UserStatus } | null;
+  postTarget: { id: string | null; nickname: string | null; status: PostStatus } | null;
+  postBody: string | null;
 }
 
 export async function listReports(status?: ReportStatus): Promise<ReportItem[]> {
@@ -72,14 +80,16 @@ export async function listReports(status?: ReportStatus): Promise<ReportItem[]> 
               r.status,
               r.created_at as "createdAt",
               json_build_object('id', rep.id, 'nickname', rep.nickname) as reporter,
-              json_build_object(
-                'id', tgt.id,
-                'nickname', tgt.nickname,
-                'status', tgt.status
-              ) as target
+              json_build_object('id', tgt.id, 'nickname', tgt.nickname, 'status', tgt.status)
+                as "userTarget",
+              json_build_object('id', p.id, 'nickname', pa.nickname, 'status', p.status)
+                as "postTarget",
+              p.body as "postBody"
          from reports r
          join users rep on rep.id = r.reporter_id
-         join users tgt on tgt.id = r.target_user_id
+         left join users tgt on tgt.id = r.target_user_id
+         left join posts p on p.id = r.target_post_id
+         left join users pa on pa.id = p.author_id
         where ($1::text is null or r.status = $1::report_status)
         order by case when r.status = 'pending' then 0 else 1 end, r.created_at desc
         limit 100`,
@@ -87,7 +97,34 @@ export async function listReports(status?: ReportStatus): Promise<ReportItem[]> 
     ),
   );
 
-  return rows.map((row) => ({ ...row, createdAt: iso(row.createdAt) }));
+  return rows.map((row) => {
+    let target: ReportTarget;
+    if (row.postTarget?.id) {
+      target = {
+        kind: "post",
+        id: row.postTarget.id,
+        nickname: row.postTarget.nickname ?? "已注销用户",
+        status: row.postTarget.status,
+        excerpt: excerptOf(row.postBody ?? "") || "（无文字内容）",
+      };
+    } else {
+      target = {
+        kind: "user",
+        id: row.userTarget?.id ?? "",
+        nickname: row.userTarget?.nickname ?? "已注销用户",
+        status: row.userTarget?.status ?? "incomplete",
+      };
+    }
+    return {
+      id: row.id,
+      type: row.type,
+      description: row.description,
+      status: row.status,
+      createdAt: iso(row.createdAt),
+      reporter: row.reporter,
+      target,
+    };
+  });
 }
 
 export async function updateReportStatus(
@@ -138,6 +175,7 @@ export async function setUserBanned(
   if (!row) throw new ApiError(404, "USER_NOT_FOUND", "用户不存在或不可封禁");
 
   if (banned) {
+    await hidePostsOfAuthor(db, userId);
     await db.withSystem((tx) =>
       tx.query(
         `update conversations

@@ -2,11 +2,11 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { Ban, Check, KeyRound, ShieldAlert, Trash2, X } from "lucide-react";
+import { Ban, Check, Eye, EyeOff, KeyRound, ShieldAlert, Trash2, X } from "lucide-react";
 import { REPORT_TYPE_OPTIONS } from "@/lib/constants";
 import { api, ApiClientError, errorMessage } from "@/lib/api-client";
 import { formatTime } from "@/lib/format";
-import type { AdminOverview, ReportItem } from "@/lib/types";
+import type { AdminOverview, AdminPostItem, PostStatus, ReportItem } from "@/lib/types";
 import { Badge, Banner, Button, Card, Field, Input, SectionTitle, Spinner, cn } from "@/components/ui";
 
 interface WordRow {
@@ -23,7 +23,13 @@ interface CodeRow {
   schoolName: string | null;
 }
 
-type Tab = "reports" | "words" | "codes";
+const POST_STATUS_LABEL: Record<PostStatus, string> = {
+  published: "正常",
+  hidden: "已隐藏",
+  removed: "已删除",
+};
+
+type Tab = "reports" | "posts" | "words" | "codes";
 
 export default function AdminPage() {
   const [authed, setAuthed] = useState<boolean | null>(null);
@@ -33,6 +39,7 @@ export default function AdminPage() {
 
   const [overview, setOverview] = useState<AdminOverview | null>(null);
   const [reports, setReports] = useState<ReportItem[]>([]);
+  const [posts, setPosts] = useState<AdminPostItem[]>([]);
   const [words, setWords] = useState<WordRow[]>([]);
   const [codes, setCodes] = useState<CodeRow[]>([]);
   const [newWord, setNewWord] = useState("");
@@ -41,15 +48,17 @@ export default function AdminPage() {
   const [busy, setBusy] = useState(false);
 
   const loadAll = useCallback(async () => {
-    const [state, reportData, wordData, codeData] = await Promise.all([
+    const [state, reportData, postData, wordData, codeData] = await Promise.all([
       api<{ overview: AdminOverview; words: WordRow[] }>("/api/admin/overview"),
       api<{ reports: ReportItem[] }>("/api/admin/reports"),
+      api<{ posts: AdminPostItem[] }>("/api/admin/posts"),
       api<{ words: WordRow[] }>("/api/admin/words"),
       api<{ codes: CodeRow[] }>("/api/admin/codes"),
     ]);
     setOverview(state.overview);
     setWords(wordData.words);
     setReports(reportData.reports);
+    setPosts(postData.posts);
     setCodes(codeData.codes);
   }, []);
 
@@ -108,8 +117,19 @@ export default function AdminPage() {
     }
   }
 
-  async function addWord() {
-    if (!newWord.trim()) return;
+  async function moderatePost(postId: string, action: "hide" | "restore" | "remove") {
+    setBusy(true);
+    try {
+      await api("/api/admin/posts", { body: { postId, action } });
+      await loadAll();
+    } catch (cause) {
+      setError(errorMessage(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function addWord() {    if (!newWord.trim()) return;
     setBusy(true);
     try {
       await api("/api/admin/words", { body: { word: newWord.trim() } });
@@ -194,6 +214,7 @@ export default function AdminPage() {
   const stats = [
     { label: "注册用户", value: overview?.users ?? 0 },
     { label: "匹配池", value: overview?.matchable ?? 0 },
+    { label: "今日动态", value: overview?.postsToday ?? 0 },
     { label: "今日消息", value: overview?.messagesToday ?? 0 },
     { label: "今日打卡", value: overview?.checkinsToday ?? 0 },
     { label: "待处理举报", value: overview?.pendingReports ?? 0 },
@@ -225,6 +246,7 @@ export default function AdminPage() {
         {(
           [
             { key: "reports", label: "举报处理", count: reports.filter((r) => r.status === "pending").length },
+            { key: "posts", label: "校园圈", count: posts.length },
             { key: "words", label: "敏感词", count: words.length },
             { key: "codes", label: "核验码", count: codes.length },
           ] as { key: Tab; label: string; count: number }[]
@@ -269,7 +291,10 @@ export default function AdminPage() {
                     <span className="text-[11px] text-muted">{formatTime(report.createdAt)}</span>
                   </div>
                   <span className="text-[11px] text-muted">
-                    {report.reporter.nickname} → {report.target.nickname}
+                    {report.reporter.nickname} →{" "}
+                    {report.target.kind === "post"
+                      ? `动态：${report.target.excerpt}`
+                      : report.target.nickname}
                   </span>
                 </div>
 
@@ -296,17 +321,109 @@ export default function AdminPage() {
                   >
                     <X size={13} /> 忽略
                   </Button>
-                  <Button
-                    variant="danger"
-                    className="px-3 py-2 text-[12px]"
-                    disabled={busy}
-                    onClick={() => ban(report)}
-                  >
-                    <Ban size={13} /> {report.target.status === "banned" ? "解除封禁" : "封禁用户"}
-                  </Button>
+                  {report.target.kind === "post" ? (
+                    <>
+                      <Button
+                        variant="secondary"
+                        className="px-3 py-2 text-[12px]"
+                        disabled={busy}
+                        onClick={() =>
+                          moderatePost(
+                            report.target.id,
+                            report.target.status === "hidden" ? "restore" : "hide",
+                          )
+                        }
+                      >
+                        {report.target.status === "hidden" ? (
+                          <>
+                            <Eye size={13} /> 恢复展示
+                          </>
+                        ) : (
+                          <>
+                            <EyeOff size={13} /> 隐藏动态
+                          </>
+                        )}
+                      </Button>
+                      <Button
+                        variant="danger"
+                        className="px-3 py-2 text-[12px]"
+                        disabled={busy}
+                        onClick={() => moderatePost(report.target.id, "remove")}
+                      >
+                        <Trash2 size={13} /> 删除动态
+                      </Button>
+                    </>
+                  ) : (
+                    <Button
+                      variant="danger"
+                      className="px-3 py-2 text-[12px]"
+                      disabled={busy}
+                      onClick={() => ban(report)}
+                    >
+                      <Ban size={13} />{" "}
+                      {report.target.status === "banned" ? "解除封禁" : "封禁用户"}
+                    </Button>
+                  )}
                 </div>
               </Card>
             ))
+          )
+        ) : tab === "posts" ? (
+          posts.length === 0 ? (
+            <Card className="text-center text-[12.5px] text-muted">校园圈还没有动态</Card>
+          ) : (
+            <div className="space-y-3">
+              {posts.map((post) => (
+                <Card key={post.id} className="space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge tone={post.status === "published" ? "mint" : "accent"}>
+                        {POST_STATUS_LABEL[post.status]}
+                      </Badge>
+                      <span className="text-[12px] text-ink-soft">{post.author.nickname}</span>
+                      <span className="text-[11px] text-muted">{formatTime(post.createdAt)}</span>
+                    </div>
+                    <span className="text-[11px] text-muted">
+                      {post.media.length} 媒体 · {post.likeCount} 赞 · {post.commentCount} 评论
+                    </span>
+                  </div>
+
+                  <p className="whitespace-pre-wrap break-words rounded-xl bg-black/[0.03] px-3 py-2 text-[12.5px] leading-5 text-ink-soft">
+                    {post.body || "（无文字内容）"}
+                  </p>
+
+                  <div className="flex flex-wrap gap-2">
+                    {post.status === "published" ? (
+                      <Button
+                        variant="secondary"
+                        className="px-3 py-2 text-[12px]"
+                        disabled={busy}
+                        onClick={() => moderatePost(post.id, "hide")}
+                      >
+                        <EyeOff size={13} /> 隐藏
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="secondary"
+                        className="px-3 py-2 text-[12px]"
+                        disabled={busy}
+                        onClick={() => moderatePost(post.id, "restore")}
+                      >
+                        <Eye size={13} /> 恢复展示
+                      </Button>
+                    )}
+                    <Button
+                      variant="danger"
+                      className="px-3 py-2 text-[12px]"
+                      disabled={busy || post.status === "removed"}
+                      onClick={() => moderatePost(post.id, "remove")}
+                    >
+                      <Trash2 size={13} /> 删除
+                    </Button>
+                  </div>
+                </Card>
+              ))}
+            </div>
           )
         ) : tab === "words" ? (
           <Card className="space-y-4">
