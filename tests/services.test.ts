@@ -28,6 +28,7 @@ import {
   openConversation,
   sendMessage,
 } from "@/server/services/chat-service";
+import { getLandingData, LANDING_STUDENT_LIMIT } from "@/server/services/landing-service";
 import { getRecommendations } from "@/server/services/match-service";
 import { getMyProfile, updateMyProfile } from "@/server/services/profile-service";
 import { createReport } from "@/server/services/report-service";
@@ -199,6 +200,17 @@ describe("campus MVP service flow", () => {
     expect(bobCard.score).toBeLessThanOrEqual(100);
     expect(bobCard.reasons.length).toBeGreaterThan(0);
     expect(bobCard.breakdown.hobby).toBe(16);
+  });
+
+  it("AC-03: recommendations can be refreshed for the same user (upsert keeps RLS happy)", async () => {
+    const viewer = await makeUser({ gender: "female", nickname: "刷新推荐" });
+    await makeUser({ gender: "male", nickname: "刷新对象" });
+
+    const first = await getRecommendations(viewer.user);
+    expect(first.length).toBeGreaterThan(0);
+
+    const second = await getRecommendations(viewer.user);
+    expect(second.map((item) => item.profile.id)).toEqual(first.map((item) => item.profile.id));
   });
 
   it("AC-04: mutual follow creates a friendship and unlocks chat", async () => {
@@ -567,6 +579,72 @@ describe("campus MVP service flow", () => {
         (item, index) => index === 0 || first.items[index - 1]!.createdAt >= item.createdAt,
       ),
     ).toBe(true);
+  });
+
+  it("homepage: a matchable visitor reads the live same-school pool without writing a batch", async () => {
+    const viewer = await makeUser({
+      gender: "female",
+      nickname: "首页访客",
+      hobbies: ["天文", "陶艺", "击剑"],
+    });
+    const mate = await makeUser({
+      gender: "male",
+      nickname: "首页同频",
+      hobbies: ["天文", "陶艺", "击剑"],
+    });
+    const friend = await makeUser({ gender: "male", nickname: "首页好友" });
+    await makeUser({ gender: "male", nickname: "外校路人" }, { schoolId: OTHER_SCHOOL_ID });
+
+    await followUser(viewer.user, friend.id);
+    await followUser(friend.user, viewer.id);
+
+    const { getDb } = await import("@/server/db");
+    const db = await getDb();
+    const before = await db.withSystem((tx) =>
+      tx.query<{ count: string }>(
+        "select count(*)::text as count from match_recommendations where user_id = $1",
+        [viewer.id],
+      ),
+    );
+
+    const data = await getLandingData(viewer.user);
+
+    expect(data.mode).toBe("live");
+    expect(data.students.length).toBeGreaterThan(0);
+    expect(data.students.length).toBeLessThanOrEqual(LANDING_STUDENT_LIMIT);
+    expect(data.students.every((student) => student.demo === false)).toBe(true);
+    expect(data.students.every((student) => student.online === null)).toBe(true);
+    expect(data.students.every((student) => student.verified)).toBe(true);
+    expect(data.students.every((student) => student.match > 0)).toBe(true);
+
+    const ids = data.students.map((student) => student.id);
+    expect(ids).toContain(mate.id);
+    expect(ids).not.toContain(friend.id);
+    expect(ids).not.toContain(viewer.id);
+    expect(data.students.every((student) => student.avatar.length > 0)).toBe(true);
+
+    const scores = data.students.map((student) => student.match);
+    expect(scores).toEqual([...scores].sort((a, b) => b - a));
+
+    const after = await db.withSystem((tx) =>
+      tx.query<{ count: string }>(
+        "select count(*)::text as count from match_recommendations where user_id = $1",
+        [viewer.id],
+      ),
+    );
+    expect(after[0]!.count).toBe(before[0]!.count);
+  });
+
+  it("homepage: guests and incomplete profiles keep the labelled demo cards", async () => {
+    const guest = await getLandingData(null);
+    expect(guest.mode).toBe("demo");
+    expect(guest.students.length).toBeGreaterThan(0);
+    expect(guest.students.every((student) => student.demo !== false)).toBe(true);
+
+    const pending = await makeUser({ nickname: "首页未完善" }, { complete: false });
+    const data = await getLandingData(pending.user);
+    expect(data.mode).toBe("demo");
+    expect(data.students).toEqual(guest.students);
   });
 
   it("C-05: banning an author also retires their published posts", async () => {

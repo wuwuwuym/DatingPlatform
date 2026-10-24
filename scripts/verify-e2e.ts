@@ -164,6 +164,33 @@ async function main(): Promise<void> {
   assert.ok(bobCard.reasons.length > 0);
   pass(`AC-03 推荐包含同校符合偏好的用户，得分 ${bobCard.score} 且有 ${bobCard.reasons.length} 条理由`);
 
+  const refreshed = await alice.expectOk<{ items: { profile: { id: string } }[] }>(
+    "/api/match/recommendations",
+  );
+  assert.equal(refreshed.items.length, recommendations.items.length);
+  pass("AC-03 同一用户可重复刷新推荐（匹配快照更新策略生效）");
+
+  const guestHome = await anonymous.page("/");
+  assert.equal(guestHome.status, 200);
+  assert.ok(
+    guestHome.html.includes("以上人物与数据均为演示内容"),
+    "guest homepage should label the sample cards",
+  );
+  assert.ok(guestHome.html.includes("示例卡片"), "guest homepage should explain the samples");
+  pass("首页：游客看到明确标注的示例卡片");
+
+  const memberHome = await alice.page("/");
+  assert.equal(memberHome.status, 200);
+  assert.ok(
+    memberHome.html.includes("同校匹配池实时同步"),
+    "member homepage should render the live recommendation source",
+  );
+  assert.ok(
+    !memberHome.html.includes("以上人物与数据均为演示内容"),
+    "member homepage must not fall back to demo cards",
+  );
+  pass("首页：登录用户接入同校实时推荐（不再显示演示卡片）");
+
   const bobProfile = await bob.expectOk<{ profile: { id: string } }>("/api/profile");
 
   await alice.expectOk("/api/follow", {

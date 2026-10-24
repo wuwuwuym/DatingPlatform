@@ -1,10 +1,17 @@
 "use client";
 
-import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { motion, useReducedMotion } from "framer-motion";
+import { ArrowRight, GraduationCap, Lock, ShieldCheck, User } from "lucide-react";
 import { api, errorMessage } from "@/lib/api-client";
-import { Banner, Button, Field, Input } from "@/components/ui";
+import {
+  AuthError,
+  AuthField,
+  AuthInput,
+  AuthSelect,
+  AuthSubmit,
+  AuthSwitch,
+} from "./auth-ui";
 
 interface School {
   id: string;
@@ -13,12 +20,14 @@ interface School {
 }
 
 export function LoginForm({ banned }: { banned: boolean }) {
-  const router = useRouter();
+  const reduce = useReducedMotion();
   const [schools, setSchools] = useState<School[]>([]);
   const [schoolId, setSchoolId] = useState("");
   const [studentNo, setStudentNo] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(banned ? "该账号已被封禁，如有疑问请联系管理员" : null);
+  const [error, setError] = useState<string | null>(
+    banned ? "该账号已被封禁，如有疑问请联系管理员" : null,
+  );
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -38,8 +47,9 @@ export function LoginForm({ banned }: { banned: boolean }) {
       const result = await api<{ status: string }>("/api/auth/login", {
         body: { schoolId, studentNo, password },
       });
-      router.replace(result.status === "matchable" ? "/match" : "/profile");
-      router.refresh();
+      // A full navigation guarantees the new session cookie is picked up by the
+      // server tree and avoids racing the client router cache after sign-in.
+      window.location.assign(result.status === "matchable" ? "/match" : "/profile");
     } catch (cause) {
       setError(errorMessage(cause));
       setLoading(false);
@@ -47,18 +57,37 @@ export function LoginForm({ banned }: { banned: boolean }) {
   }
 
   return (
-    <div>
-      <h1 className="text-[26px] font-semibold tracking-tight text-ink">欢迎回来</h1>
-      <p className="mt-2 text-[13px] leading-6 text-muted">
-        用注册时的学校与学号登录。学号只用于核验，不会出现在任何页面。
-      </p>
+    <motion.div
+      initial={reduce ? { opacity: 1, y: 0 } : { opacity: 0, y: 15 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5, ease: "easeOut" }}
+    >
+      <header>
+        <h1 className="text-[32px] font-bold leading-tight tracking-[-0.03em] text-slate-900 sm:text-[34px]">
+          欢迎回来
+        </h1>
+        <p className="mt-2.5 text-[13px] leading-6 text-slate-500">
+          好久不见，回到同频，继续遇见合拍的校园伙伴。
+        </p>
+      </header>
+
+      <div className="mt-5 flex items-start gap-2.5 rounded-xl bg-brand-soft/70 px-3.5 py-3 text-[12px] leading-5 text-slate-600">
+        <ShieldCheck
+          className="mt-0.5 size-4 shrink-0 text-brand"
+          strokeWidth={1.8}
+          aria-hidden="true"
+        />
+        <span>你的学号仅用于校内身份核验，绝对保护隐私</span>
+      </div>
 
       <form onSubmit={onSubmit} className="mt-7 space-y-4">
-        <Field label="学校">
-          <select
-            className="field-input"
+        <AuthField label="学校" htmlFor="login-school">
+          <AuthSelect
+            id="login-school"
+            icon={GraduationCap}
             value={schoolId}
             onChange={(event) => setSchoolId(event.target.value)}
+            disabled={schools.length === 0}
             required
           >
             {schools.length === 0 ? <option value="">加载中…</option> : null}
@@ -67,11 +96,13 @@ export function LoginForm({ banned }: { banned: boolean }) {
                 {school.name}
               </option>
             ))}
-          </select>
-        </Field>
+          </AuthSelect>
+        </AuthField>
 
-        <Field label="学号">
-          <Input
+        <AuthField label="学号" htmlFor="login-student-no">
+          <AuthInput
+            id="login-student-no"
+            icon={User}
             value={studentNo}
             onChange={(event) => setStudentNo(event.target.value)}
             inputMode="numeric"
@@ -79,10 +110,12 @@ export function LoginForm({ banned }: { banned: boolean }) {
             placeholder="例如 20210001"
             required
           />
-        </Field>
+        </AuthField>
 
-        <Field label="密码">
-          <Input
+        <AuthField label="密码" htmlFor="login-password">
+          <AuthInput
+            id="login-password"
+            icon={Lock}
             type="password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
@@ -90,21 +123,21 @@ export function LoginForm({ banned }: { banned: boolean }) {
             placeholder="注册时设置的密码"
             required
           />
-        </Field>
+        </AuthField>
 
-        {error ? <Banner>{error}</Banner> : null}
+        <AuthError message={error} />
 
-        <Button type="submit" loading={loading} className="w-full">
+        <AuthSubmit loading={loading} loadingText="正在登录…">
           登录
-        </Button>
+          <ArrowRight
+            className="size-4 transition-transform duration-200 group-hover:translate-x-0.5"
+            strokeWidth={2}
+            aria-hidden="true"
+          />
+        </AuthSubmit>
       </form>
 
-      <p className="mt-6 text-center text-[13px] text-muted">
-        还没有账号？
-        <Link href="/register" className="ml-1 font-medium text-brand">
-          去注册
-        </Link>
-      </p>
-    </div>
+      <AuthSwitch prompt="还没有账号？" href="/register" label="去注册" />
+    </motion.div>
   );
 }

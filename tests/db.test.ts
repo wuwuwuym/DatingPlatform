@@ -29,6 +29,7 @@ describe("migrations", () => {
       "0002_seed.sql",
       "0003_circle.sql",
       "0004_circle_policy.sql",
+      "0005_match_recommendations_update.sql",
     ]);
   });
 

@@ -7,7 +7,11 @@ import { PROFILE_COLUMNS } from "../sql";
 
 export const RECOMMENDATION_LIMIT = 20;
 
-export async function getRecommendations(user: SessionUser): Promise<RecommendationItem[]> {
+export async function getRecommendations(
+  user: SessionUser,
+  options: { record?: boolean } = {},
+): Promise<RecommendationItem[]> {
+  const record = options.record ?? true;
   if (user.status !== "matchable") {
     throw new ApiError(403, "PROFILE_INCOMPLETE", "请先完善资料，加入匹配池");
   }
@@ -75,6 +79,8 @@ export async function getRecommendations(user: SessionUser): Promise<Recommendat
       })
       .sort((a, b) => b.score - a.score)
       .slice(0, RECOMMENDATION_LIMIT);
+
+    if (!record) return items;
 
     for (const item of items) {
       await tx.query(

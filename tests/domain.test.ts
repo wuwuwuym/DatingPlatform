@@ -29,6 +29,8 @@ import {
   shiftDateKey,
 } from "@/lib/checkin/streak";
 import { RateLimiter } from "@/lib/rate-limit";
+import { avatarVariantForId, toLandingStudent } from "@/lib/landing/adapters";
+import type { RecommendationItem } from "@/lib/types";
 
 describe("password hashing", () => {
   it("round-trips a valid password", async () => {
@@ -276,6 +278,79 @@ describe("circle content moderation", () => {
   it("builds a compact single-line excerpt for moderation lists", () => {
     expect(excerptOf("  今天  去了图书馆\n还借了两本书  ")).toBe("今天 去了图书馆 还借了两本书");
     expect(excerptOf("很长的内容".repeat(20), 10)).toHaveLength(11);
+  });
+});
+
+describe("landing page adapters", () => {
+  const recommendation: RecommendationItem = {
+    profile: {
+      id: "6a2b6f70-0000-4000-8000-00000000c001",
+      nickname: "陈一诺",
+      avatarUrl: null,
+      gender: "male",
+      grade: "大三",
+      department: "中文系",
+      mbti: "INFP",
+      zodiac: "pisces",
+      personalityTags: ["温和", "慢热"],
+      hobbies: ["电影", "阅读", "咖啡"],
+      bio: "耳机常驻，最近在补是枝裕和。",
+      schoolName: "星海大学",
+    },
+    score: 88,
+    reasons: ["都喜欢电影"],
+    breakdown: { hobby: 40, mbti: 20, tag: 14, zodiac: 14 },
+    following: false,
+  };
+
+  it("maps a real recommendation into a truthful card", () => {
+    const student = toLandingStudent(recommendation, ["电影", "摄影"]);
+
+    expect(student.id).toBe(recommendation.profile.id);
+    expect(student.name).toBe("陈一诺");
+    expect(student.match).toBe(88);
+    expect(student.verified).toBe(true);
+    expect(student.demo).toBe(false);
+    expect(student.following).toBe(false);
+    expect(student.online).toBeNull();
+    expect(student.avatarUrl).toBeNull();
+    expect(student.interests).toEqual(["电影", "阅读", "咖啡"]);
+    expect(student.sharedInterest).toBe("电影");
+    expect(student.commonInterests).toBe(1);
+  });
+
+  it("derives a stable illustrated avatar from the account id", () => {
+    const first = avatarVariantForId(recommendation.profile.id);
+    expect(avatarVariantForId(recommendation.profile.id)).toBe(first);
+    expect(["xiaoman", "yuchen", "suning", "zhouzhou", "hemiao", "tangke"]).toContain(first);
+    expect(toLandingStudent(recommendation, []).avatar).toBe(first);
+  });
+
+  it("falls back gracefully when the profile is sparse", () => {
+    const student = toLandingStudent(
+      {
+        ...recommendation,
+        score: 0,
+        profile: {
+          ...recommendation.profile,
+          avatarUrl: "data:image/png;base64,AA==",
+          grade: null,
+          department: null,
+          hobbies: [],
+          personalityTags: ["安静"],
+          bio: "   ",
+        },
+      },
+      ["摄影"],
+    );
+
+    expect(student.interests).toEqual(["安静"]);
+    expect(student.grade).toBe("");
+    expect(student.major).toBe("");
+    expect(student.bio).toContain("打个招呼");
+    expect(student.sharedInterest).toBe("安静");
+    expect(student.commonInterests).toBe(0);
+    expect(student.avatarUrl).toBe("data:image/png;base64,AA==");
   });
 });
 
