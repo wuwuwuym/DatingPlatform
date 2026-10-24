@@ -4,7 +4,6 @@ import { useState } from "react";
 import {
   Check,
   Flag,
-  Heart,
   Maximize2,
   MessageCircle,
   Send,
@@ -15,9 +14,11 @@ import {
 import { formatTime } from "@/lib/format";
 import { api, ApiClientError, errorMessage } from "@/lib/api-client";
 import type { PostCommentItem, PostItem } from "@/lib/types";
-import { Avatar, Badge, Banner, Card, cn } from "@/components/ui";
+import { Banner, Card, cn } from "@/components/ui";
 import { MAX_COMMENT_LENGTH } from "@/lib/circle/content";
+import { CircleAvatar } from "@/components/avatar-ring";
 import { ImageLightbox } from "./lightbox";
+import { LikeButton } from "./like-button";
 
 export function PostCard({
   post,
@@ -139,44 +140,66 @@ export function PostCard({
   const images = post.media.filter((item) => item.type === "image");
 
   return (
-    <Card className="space-y-3 p-4">
+    <Card className="circle-card-lift space-y-3.5">
       <div className="flex items-center gap-3">
-        <Avatar name={post.author.nickname} src={post.author.avatarUrl} size={40} />
+        <CircleAvatar name={post.author.nickname} src={post.author.avatarUrl} size={40} />
         <div className="min-w-0 flex-1">
-          <p className="flex items-center gap-1.5 truncate text-[13.5px] font-medium text-ink">
+          <p className="flex items-center gap-1.5 truncate text-[14px] font-semibold text-slate-800">
             {post.author.nickname}
-            {post.mine ? <span className="text-[10px] font-normal text-muted">我</span> : null}
+            {post.mine ? (
+              <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[9.5px] font-medium text-slate-500">
+                我
+              </span>
+            ) : null}
           </p>
-          <p className="mt-0.5 truncate text-[10.5px] text-muted">
-            {[post.author.mbti, post.author.department, formatTime(post.createdAt)]
-              .filter(Boolean)
-              .join(" · ")}
-          </p>
+          <div className="mt-1 flex flex-wrap items-center gap-1.5">
+            {post.author.mbti ? (
+              <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-medium text-indigo-600">
+                {post.author.mbti}
+              </span>
+            ) : null}
+            {post.author.department ? (
+              <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-medium text-rose-600">
+                {post.author.department}
+              </span>
+            ) : null}
+            <span className="text-[10.5px] text-slate-500">{formatTime(post.createdAt)}</span>
+          </div>
         </div>
 
-        {post.status === "hidden" ? <Badge tone="accent">审核中</Badge> : null}
-        {post.status === "removed" ? <Badge>已删除</Badge> : null}
-
-        {!post.mine && post.status === "published" ? (
-          post.following ? (
-            <span className="flex items-center gap-1 text-[11px] text-muted">
-              <Check size={12} /> 已关注
+        <div className="flex shrink-0 items-center gap-1.5">
+          {post.status === "hidden" ? (
+            <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-medium text-amber-600">
+              审核中
             </span>
-          ) : (
-            <button
-              type="button"
-              onClick={follow}
-              disabled={busy}
-              className="flex items-center gap-1 rounded-full bg-brand-soft px-2.5 py-1.5 text-[11px] font-medium text-brand disabled:opacity-50"
-            >
-              <UserPlus size={12} /> 关注
-            </button>
-          )
-        ) : null}
+          ) : null}
+          {post.status === "removed" ? (
+            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-medium text-slate-500">
+              已删除
+            </span>
+          ) : null}
+
+          {!post.mine && post.status === "published" ? (
+            post.following ? (
+              <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2.5 py-1.5 text-[11px] font-medium text-rose-600">
+                <Check size={12} strokeWidth={2} aria-hidden="true" /> 已关注
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={follow}
+                disabled={busy}
+                className="circle-btn relative inline-flex items-center gap-1 rounded-full bg-indigo-500 px-3 py-1.5 text-[11px] font-medium text-white shadow-sm shadow-indigo-500/25 after:absolute after:-inset-2 after:content-[''] disabled:opacity-50"
+              >
+                <UserPlus size={12} strokeWidth={1.5} aria-hidden="true" /> 关注
+              </button>
+            )
+          ) : null}
+        </div>
       </div>
 
       {post.body ? (
-        <p className="whitespace-pre-wrap break-words text-[13.5px] leading-6 text-ink-soft">
+        <p className="whitespace-pre-wrap break-words text-[14px] leading-7 text-slate-600">
           {post.body}
         </p>
       ) : null}
@@ -190,7 +213,7 @@ export function PostCard({
               aria-label="查看大图"
               onClick={() => setViewerIndex(index)}
               className={cn(
-                "group relative block cursor-zoom-in overflow-hidden rounded-2xl bg-black/[0.03] outline-none focus-visible:ring-2 focus-visible:ring-brand/60",
+                "group relative block cursor-zoom-in overflow-hidden rounded-xl bg-slate-100 outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60",
                 images.length === 1 ? "w-full" : "aspect-square",
               )}
             >
@@ -200,12 +223,12 @@ export function PostCard({
                 alt="动态图片"
                 loading="lazy"
                 className={cn(
-                  "w-full object-cover transition duration-300 group-hover:scale-[1.015]",
-                  images.length === 1 ? "max-h-[420px] aspect-[4/3]" : "h-full",
+                  "w-full object-cover transition duration-300 group-hover:scale-[1.02]",
+                  images.length === 1 ? "aspect-[4/3] max-h-[420px]" : "h-full",
                 )}
               />
-              <span className="pointer-events-none absolute top-2 right-2 grid size-6 place-items-center rounded-full bg-black/40 text-white opacity-85 backdrop-blur transition group-hover:opacity-100">
-                <Maximize2 size={12} />
+              <span className="pointer-events-none absolute top-2 right-2 grid size-7 place-items-center rounded-full bg-slate-900/45 text-white opacity-85 backdrop-blur transition group-hover:opacity-100">
+                <Maximize2 size={13} strokeWidth={1.5} aria-hidden="true" />
               </span>
             </button>
           ))}
@@ -218,18 +241,18 @@ export function PostCard({
             controls
             preload="metadata"
             src={video.url}
-            className="w-full rounded-2xl bg-black"
+            className="w-full rounded-xl bg-slate-900"
           />
         ) : (
           <a
             href={video.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-2.5 rounded-2xl bg-brand-soft/70 px-3.5 py-3 text-brand"
+            className="flex items-center gap-2.5 rounded-xl bg-indigo-50 px-3.5 py-3 text-indigo-600 transition-colors hover:bg-indigo-100/70"
           >
-            <Video size={17} className="shrink-0" />
+            <Video size={17} strokeWidth={1.5} className="shrink-0" aria-hidden="true" />
             <span className="text-[12.5px] font-medium">查看视频</span>
-            <span className="ml-auto max-w-[55%] truncate text-[10.5px] text-muted">
+            <span className="ml-auto max-w-[55%] truncate text-[10.5px] text-slate-500">
               {video.url}
             </span>
           </a>
@@ -239,22 +262,22 @@ export function PostCard({
       {notice ? <Banner tone="success">{notice}</Banner> : null}
       {error ? <Banner>{error}</Banner> : null}
 
-      <div className="flex items-center gap-4 border-t border-line pt-2.5 text-[12px] text-muted">
+      <div className="flex items-center gap-1 pt-0.5">
+        <LikeButton
+          liked={post.liked}
+          count={post.likeCount}
+          disabled={busy || post.status !== "published"}
+          onToggle={toggleLike}
+        />
+
         <button
           type="button"
-          onClick={toggleLike}
-          disabled={busy || post.status !== "published"}
-          className={cn(
-            "flex items-center gap-1.5 transition disabled:opacity-50",
-            post.liked && "font-medium text-accent",
-          )}
+          onClick={openComments}
+          aria-expanded={showComments}
+          aria-label={showComments ? "收起评论" : "查看评论"}
+          className="inline-flex min-h-11 items-center gap-1.5 rounded-full px-3 text-[12px] text-slate-500 transition-all duration-200 hover:bg-indigo-50 hover:text-indigo-600 active:scale-95"
         >
-          <Heart size={15} fill={post.liked ? "currentColor" : "none"} />
-          {post.likeCount > 0 ? post.likeCount : "点赞"}
-        </button>
-
-        <button type="button" onClick={openComments} className="flex items-center gap-1.5">
-          <MessageCircle size={15} />
+          <MessageCircle size={16} strokeWidth={1.5} aria-hidden="true" />
           {post.commentCount > 0 ? post.commentCount : "评论"}
         </button>
 
@@ -263,36 +286,36 @@ export function PostCard({
             type="button"
             onClick={deletePost}
             disabled={busy || post.status === "removed"}
-            className="ml-auto flex items-center gap-1 text-[11px] disabled:opacity-40"
+            className="ml-auto inline-flex min-h-11 items-center gap-1 rounded-full px-2.5 text-[11px] text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700 disabled:opacity-40"
           >
-            <Trash2 size={13} /> 删除
+            <Trash2 size={13} strokeWidth={1.5} aria-hidden="true" /> 删除
           </button>
         ) : (
           <button
             type="button"
             onClick={() => onReport(post)}
-            className="ml-auto flex items-center gap-1 text-[11px]"
+            className="ml-auto inline-flex min-h-11 items-center gap-1 rounded-full px-2.5 text-[11px] text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700"
           >
-            <Flag size={12} /> 举报
+            <Flag size={13} strokeWidth={1.5} aria-hidden="true" /> 举报
           </button>
         )}
       </div>
 
       {showComments ? (
-        <div className="space-y-2.5 rounded-2xl bg-black/[0.02] p-3">
+        <div className="space-y-3 rounded-2xl bg-slate-50 p-3.5">
           {comments === null ? (
-            <p className="text-[11.5px] text-muted">评论加载中…</p>
+            <p className="text-[11.5px] text-slate-500">评论加载中…</p>
           ) : comments.length === 0 ? (
-            <p className="text-[11.5px] text-muted">还没有评论，来说第一句。</p>
+            <p className="text-[11.5px] text-slate-500">还没有评论，来说第一句。</p>
           ) : (
             comments.map((comment) => (
               <div key={comment.id} className="flex items-start gap-2">
-                <Avatar name={comment.author.nickname} src={comment.author.avatarUrl} size={26} />
+                <CircleAvatar name={comment.author.nickname} src={comment.author.avatarUrl} size={26} />
                 <div className="min-w-0 flex-1">
-                  <p className="text-[11px] text-muted">
+                  <p className="text-[11px] text-slate-500">
                     {comment.author.nickname} · {formatTime(comment.createdAt)}
                   </p>
-                  <p className="mt-0.5 break-words text-[12.5px] leading-5 text-ink-soft">
+                  <p className="mt-0.5 break-words text-[12.5px] leading-5 text-slate-600">
                     {comment.body}
                   </p>
                 </div>
@@ -301,9 +324,9 @@ export function PostCard({
                     type="button"
                     aria-label="删除评论"
                     onClick={() => deleteComment(comment.id)}
-                    className="mt-0.5 text-muted"
+                    className="mt-0.5 text-slate-500 transition-colors hover:text-rose-600"
                   >
-                    <Trash2 size={12} />
+                    <Trash2 size={12} strokeWidth={1.5} aria-hidden="true" />
                   </button>
                 ) : null}
               </div>
@@ -322,6 +345,7 @@ export function PostCard({
                 }
               }}
               placeholder="友好地说点什么…"
+              aria-label="写评论"
               className="field-input py-2 text-[12.5px]"
             />
             <button
@@ -329,9 +353,9 @@ export function PostCard({
               aria-label="发送评论"
               onClick={submitComment}
               disabled={busy || commentText.trim().length === 0}
-              className="grid size-9 shrink-0 place-items-center rounded-xl bg-brand text-white disabled:opacity-40"
+              className="grid size-11 shrink-0 place-items-center rounded-full bg-indigo-500 text-white transition-all duration-200 hover:bg-indigo-600 active:scale-95 disabled:opacity-40"
             >
-              <Send size={14} />
+              <Send size={14} strokeWidth={1.5} aria-hidden="true" />
             </button>
           </div>
         </div>
