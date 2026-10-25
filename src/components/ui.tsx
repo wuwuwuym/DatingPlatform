@@ -9,10 +9,10 @@ type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
 
 const BUTTON_STYLES: Record<ButtonVariant, string> = {
   primary:
-    "bg-brand text-white shadow-[0_14px_28px_-16px_rgba(91,91,214,0.9)] hover:bg-brand-deep active:scale-[0.99]",
-  secondary: "bg-brand-soft text-brand hover:bg-[#e3e1ff]",
+    "bg-brand text-white shadow-[0_14px_28px_-16px_rgba(91,108,255,0.9)] hover:bg-brand-deep active:scale-[0.99]",
+  secondary: "bg-brand-soft text-brand-deep hover:bg-[#e3e6ff]",
   ghost: "bg-transparent text-ink-soft hover:bg-black/5",
-  danger: "bg-accent-soft text-accent hover:bg-[#ffe3da]",
+  danger: "bg-accent-soft text-accent hover:bg-[#fbe2e2]",
 };
 
 export function Button({
@@ -31,7 +31,7 @@ export function Button({
       {...rest}
       disabled={disabled || loading}
       className={cn(
-        "inline-flex items-center justify-center gap-2 rounded-2xl px-5 py-3 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-55",
+        "inline-flex items-center justify-center gap-2 rounded-full px-5 py-3 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-55",
         BUTTON_STYLES[variant],
         className,
       )}
@@ -198,7 +198,7 @@ export function ScoreRing({ score, size = 56 }: { score: number; size?: number }
           strokeLinecap="round"
           strokeDasharray={circumference}
           strokeDashoffset={offset}
-          className="fill-none stroke-[#5b5bd6]"
+          className="fill-none stroke-brand"
           style={{ transition: "stroke-dashoffset 600ms ease" }}
         />
       </svg>

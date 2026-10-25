@@ -24,6 +24,7 @@ import {
 import { checkin } from "@/server/services/checkin-service";
 import {
   listConversations,
+  listMessageNotifications,
   listMessages,
   openConversation,
   sendMessage,
@@ -286,6 +287,30 @@ describe("campus MVP service flow", () => {
 
     const stillClean = await listMessages(b.user, conversationId);
     expect(stillClean).toHaveLength(1);
+  });
+
+  it("AC-05: message notifications only include incoming messages", async () => {
+    const sender = await makeUser({ nickname: "通知发送方" });
+    const receiver = await makeUser({ gender: "male", nickname: "通知接收方" });
+
+    await followUser(sender.user, receiver.id);
+    await followUser(receiver.user, sender.id);
+    const { id: conversationId } = await openConversation(sender.user, receiver.id);
+
+    await sendMessage(sender.user, conversationId, "给你发一条消息");
+    await sendMessage(receiver.user, conversationId, "我的回复不通知自己");
+
+    const since = new Date(Date.now() - 60_000).toISOString();
+    const forReceiver = await listMessageNotifications(receiver.user, since);
+    expect(forReceiver).toHaveLength(1);
+    expect(forReceiver[0]!.conversationId).toBe(conversationId);
+    expect(forReceiver[0]!.message.content).toBe("给你发一条消息");
+    expect(forReceiver[0]!.partner.id).toBe(sender.id);
+    expect(forReceiver[0]!.partner.nickname).toBe("通知发送方");
+
+    const forSender = await listMessageNotifications(sender.user, since);
+    expect(forSender).toHaveLength(1);
+    expect(forSender[0]!.message.content).toBe("我的回复不通知自己");
   });
 
   it("AC-06/AC-07: daily check-in is unique and unlocks streak achievements", async () => {

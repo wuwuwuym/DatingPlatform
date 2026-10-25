@@ -92,6 +92,20 @@ export interface MessageItem {
   mine: boolean;
 }
 
+export interface ChatNotification {
+  conversationId: string;
+  partner: {
+    id: string;
+    nickname: string;
+    avatarUrl: string | null;
+  };
+  message: {
+    id: string;
+    content: string;
+    createdAt: string;
+  };
+}
+
 export interface CircleMedia {
   type: "image" | "video";
   url: string;

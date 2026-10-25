@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { Compass, Flame, Globe2, MessageCircle, User, Users } from "lucide-react";
 import type { ReactNode } from "react";
 import { CircleAvatar } from "@/components/avatar-ring";
+import { MessageNotifier } from "@/components/message-notifier";
 import { Avatar, cn } from "./ui";
 
 const NAV = [
@@ -44,6 +45,7 @@ export function AppShell({
         chat && "chat-v2",
       )}
     >
+      <MessageNotifier />
       <div className={cn("shell pb-28", circle && "md:max-w-[680px] md:px-8")}>
         <header className="flex items-center justify-between pt-6 pb-5">
           <div className="flex items-center gap-2.5">

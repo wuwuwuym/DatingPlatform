@@ -50,7 +50,7 @@ pnpm admin:passcode
 | 数据 | PostgreSQL（Supabase 兼容） | 本地默认 `@electric-sql/pglite`（进程内真实 Postgres/WASM），设置 `DATABASE_URL` 即切到 Supabase |
 | 权限 | RLS + 应用角色 `app_authenticated` | 数据库是最后一道隔离防线，可被测试直接证明 |
 | 认证 | 自建：scrypt 密码 + HMAC 签名 Cookie | 学号 HMAC-SHA256 哈希存储，唯一索引防重复注册 |
-| 实时 | SSE 服务端推送（~1.2s） | 不依赖 Supabase Realtime，本地与云端行为一致 |
+| 实时 | SSE 服务端推送（会话 ~1.2s / 全局通知 ~1.5s） | 不依赖 Supabase Realtime，本地与云端行为一致 |
 | 测试 | Vitest + HTTP 级验收脚本 | 单测 / 服务集成 / 全链路三层 |
 
 ## 3. 目录结构
@@ -122,11 +122,12 @@ docs/                  设计说明与验收对照
 | GET / PUT | `/api/profile` | 读取 / 更新资料，`complete: true` 时校验并进入匹配池 |
 | GET | `/api/match/recommendations` | 同校推荐 + 分数 + 理由 |
 | POST | `/api/follow` | `follow` / `unfollow` / `block` / `unblock` |
-| GET | `/api/friends` | 好友 / 我关注的 / 关注我的 |
+| GET | `/api/friends` | 好友 / 我关注的 / 关注我的 / 黑名单 |
 | GET | `/api/conversations` | 会话列表（含未读数） |
 | POST | `/api/conversations/open` | 打开或创建与好友的会话 |
 | GET / POST | `/api/conversations/{id}/messages` | 读取 / 发送消息（敏感词拦截） |
-| GET | `/api/conversations/{id}/stream` | SSE 实时消息 |
+| GET | `/api/conversations/{id}/stream` | 当前会话的 SSE 实时消息 |
+| GET | `/api/messages/stream` | 全站新消息 SSE（通知弹窗） |
 | GET / POST | `/api/posts` | 校园圈时间线（`scope=all\|following`，游标分页）/ 发布动态 |
 | DELETE | `/api/posts/{id}` | 作者删除自己的动态 |
 | POST | `/api/posts/{id}/like` | 点赞 / 取消点赞 |

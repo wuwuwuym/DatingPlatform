@@ -1,5 +1,10 @@
 import { findSensitiveWords } from "@/lib/chat/sensitive";
-import type { ConversationItem, MessageItem, PublicProfile } from "@/lib/types";
+import type {
+  ChatNotification,
+  ConversationItem,
+  MessageItem,
+  PublicProfile,
+} from "@/lib/types";
 import type { SessionUser } from "../auth";
 import { getDb, type Tx } from "../db";
 import { ApiError } from "../http";
@@ -92,6 +97,56 @@ export async function listConversations(user: SessionUser): Promise<Conversation
         : null,
       unreadCount: Number(row.unreadCount ?? 0),
       closed: row.closedAt !== null,
+    }));
+  });
+}
+
+export async function listMessageNotifications(
+  user: SessionUser,
+  after: string,
+): Promise<ChatNotification[]> {
+  const db = await getDb();
+  return db.withUser(user.id, async (tx) => {
+    const rows = await tx.query<{
+      conversationId: string;
+      messageId: string;
+      content: string;
+      createdAt: unknown;
+      partnerId: string;
+      nickname: string;
+      avatarUrl: string | null;
+    }>(
+      `select
+         c.id as "conversationId",
+         m.id as "messageId",
+         m.content,
+         m.created_at as "createdAt",
+         u.id as "partnerId",
+         u.nickname,
+         u.avatar_url as "avatarUrl"
+       from messages m
+       join conversations c on c.id = m.conversation_id
+       join users u on u.id = case when c.user_a = $1 then c.user_b else c.user_a end
+      where (c.user_a = $1 or c.user_b = $1)
+        and m.sender_id <> $1
+        and m.created_at > $2::timestamptz
+      order by m.created_at asc, m.id asc
+      limit 20`,
+      [user.id, after],
+    );
+
+    return rows.map((row) => ({
+      conversationId: row.conversationId,
+      partner: {
+        id: row.partnerId,
+        nickname: row.nickname,
+        avatarUrl: row.avatarUrl,
+      },
+      message: {
+        id: row.messageId,
+        content: row.content,
+        createdAt: iso(row.createdAt),
+      },
     }));
   });
 }
