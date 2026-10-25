@@ -7,7 +7,8 @@
 
 - 只重构 `/match`，通过 `AppShell` 的 `usePathname()` 给外层加 `.match-v2`，与 `.circle-v2` 共用一套页面级 token；其他页面暂不迁移。
 - **右上角的 25 不是年龄，是匹配分。** `PublicProfile` 目前没有 `age` 字段，所以胶囊显示为 `25 同频`，并用 `aria-label="同频度 25"` 说明。若确实要显示“25 岁”，需要给资料新增年龄字段（数据库 + API + 表单），不能用匹配分冒充年龄。
-- 推荐、关注、互关横幅、换一批等业务逻辑未改；仅调用了原有的 `/api/match/recommendations` 与 `/api/follow`。
+- 推荐、关注、互关横幅仍使用原有的 `/api/match/recommendations` 与 `/api/follow`。
+- 「换一批」在每日单批推荐内轮换：退场后切到下一位，末尾回绕到第一位；不会重复拉取同一有序列表后回到第一张。详见 [bugfix-round1.md](./bugfix-round1.md)。
 
 ## 2. 卡片层级
 

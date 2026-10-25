@@ -7,13 +7,15 @@ import {
   Flag,
   Flame,
   MessageCircle,
+  RotateCcw,
   UserMinus,
   UserPlus,
   UsersRound,
 } from "lucide-react";
 import { zodiacLabel } from "@/lib/constants";
 import { api, errorMessage } from "@/lib/api-client";
-import type { FollowItem, FriendItem } from "@/lib/types";
+import { formatTime } from "@/lib/format";
+import type { BlockedItem, FollowItem, FriendItem } from "@/lib/types";
 import { ReportDialog } from "@/components/report-dialog";
 import {
   Avatar,
@@ -26,7 +28,7 @@ import {
   cn,
 } from "@/components/ui";
 
-type Tab = "friends" | "following" | "followers";
+type Tab = "friends" | "following" | "followers" | "blocked";
 
 export default function FriendsPage() {
   const router = useRouter();
@@ -34,6 +36,7 @@ export default function FriendsPage() {
   const [friends, setFriends] = useState<FriendItem[]>([]);
   const [following, setFollowing] = useState<FollowItem[]>([]);
   const [followers, setFollowers] = useState<FollowItem[]>([]);
+  const [blocked, setBlocked] = useState<BlockedItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -47,10 +50,12 @@ export default function FriendsPage() {
         friends: FriendItem[];
         following: FollowItem[];
         followers: FollowItem[];
+        blocked: BlockedItem[];
       }>("/api/friends");
       setFriends(data.friends);
       setFollowing(data.following);
       setFollowers(data.followers);
+      setBlocked(data.blocked);
     } catch (cause) {
       setError(errorMessage(cause));
     } finally {
@@ -95,12 +100,21 @@ export default function FriendsPage() {
     }
   }
 
-  async function social(targetUserId: string, action: "unfollow" | "block" | "follow") {
+  async function social(
+    targetUserId: string,
+    action: "unfollow" | "block" | "unblock" | "follow",
+  ) {
     setBusyId(targetUserId);
     try {
       await api("/api/follow", { body: { targetUserId, action } });
       setToast(
-        action === "unfollow" ? "已取消关注" : action === "block" ? "已拉黑，双方不再互相推荐" : "已关注",
+        action === "unfollow"
+          ? "已取消关注"
+          : action === "block"
+            ? "已拉黑，双方不再互相推荐"
+            : action === "unblock"
+              ? "已取消拉黑，对方会重新进入推荐池"
+              : "已关注",
       );
       await load();
     } catch (cause) {
@@ -114,6 +128,7 @@ export default function FriendsPage() {
     { key: "friends", label: "好友", count: friends.length },
     { key: "following", label: "我关注的", count: following.length },
     { key: "followers", label: "关注我的", count: followers.length },
+    { key: "blocked", label: "黑名单", count: blocked.length },
   ];
 
   return (
@@ -238,6 +253,37 @@ export default function FriendsPage() {
                 >
                   <UserMinus size={13} /> 取消关注
                 </button>
+              </Card>
+            ))}
+          </div>
+        )
+      ) : tab === "blocked" ? (
+        blocked.length === 0 ? (
+          <EmptyState
+            icon={<Ban size={30} />}
+            title="黑名单是空的"
+            description="拉黑后对方会出现在这里，你可以随时取消拉黑。"
+          />
+        ) : (
+          <div className="space-y-3">
+            {blocked.map(({ profile, blockedAt }) => (
+              <Card key={profile.id} className="flex items-center gap-3 p-4">
+                <Avatar name={profile.nickname} src={profile.avatarUrl} />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[14px] font-medium text-ink">{profile.nickname}</p>
+                  <p className="mt-0.5 text-[11.5px] text-muted">
+                    拉黑于 {formatTime(blockedAt)}
+                  </p>
+                </div>
+                <Button
+                  variant="secondary"
+                  className="px-3 py-2 text-[11.5px]"
+                  loading={busyId === profile.id}
+                  aria-label={`取消拉黑 ${profile.nickname}`}
+                  onClick={() => social(profile.id, "unblock")}
+                >
+                  <RotateCcw size={13} /> 取消拉黑
+                </Button>
               </Card>
             ))}
           </div>

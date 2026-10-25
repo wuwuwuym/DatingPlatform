@@ -35,7 +35,9 @@ import { createReport } from "@/server/services/report-service";
 import {
   blockUser,
   followUser,
+  listBlocked,
   listFriends,
+  unblockUser,
   unfollowUser,
 } from "@/server/services/social-service";
 import { findUserById, type SessionUser } from "@/server/user-repo";
@@ -211,6 +213,23 @@ describe("campus MVP service flow", () => {
 
     const second = await getRecommendations(viewer.user);
     expect(second.map((item) => item.profile.id)).toEqual(first.map((item) => item.profile.id));
+  });
+
+  it("AC-20: blocked users can be listed and unblocked", async () => {
+    const a = await makeUser({ gender: "female", nickname: "拉黑方" });
+    const b = await makeUser({ gender: "male", nickname: "被拉黑方" });
+
+    await blockUser(a.user, b.id);
+
+    const blocked = await listBlocked(a.user);
+    expect(blocked.map((item) => item.profile.id)).toContain(b.id);
+    expect(blocked[0]!.blockedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(blocked[0]!.profile).not.toHaveProperty("blockedAt");
+
+    await unblockUser(a.user, b.id);
+
+    expect((await listBlocked(a.user)).map((item) => item.profile.id)).not.toContain(b.id);
+    expect((await getRecommendations(a.user)).map((item) => item.profile.id)).toContain(b.id);
   });
 
   it("AC-04: mutual follow creates a friendship and unlocks chat", async () => {

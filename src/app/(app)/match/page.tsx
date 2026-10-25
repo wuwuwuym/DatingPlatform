@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Compass, Heart, MessageCircle, RefreshCw, Sparkles, UserRound, X } from "lucide-react";
 import { api, ApiClientError, errorMessage } from "@/lib/api-client";
@@ -30,6 +30,7 @@ export default function MatchPage() {
   const [exitDir, setExitDir] = useState<"left" | "right">("left");
   const [cardVisible, setCardVisible] = useState(true);
   const [leaving, setLeaving] = useState(false);
+  const wrapOnExit = useRef(false);
 
   useEffect(() => {
     setItems(null);
@@ -37,6 +38,7 @@ export default function MatchPage() {
     setExitDir("left");
     setCardVisible(true);
     setLeaving(false);
+    wrapOnExit.current = false;
     setError(null);
     setNeedProfile(false);
     api<{ items: RecommendationItem[] }>("/api/match/recommendations")
@@ -53,7 +55,8 @@ export default function MatchPage() {
 
   const current = items?.[index];
 
-  function leave(direction: "left" | "right") {
+  function leave(direction: "left" | "right", wrap = false) {
+    wrapOnExit.current = wrap;
     setExitDir(direction);
     setLeaving(true);
     requestAnimationFrame(() => setCardVisible(false));
@@ -62,6 +65,13 @@ export default function MatchPage() {
   function skip() {
     if (busy || leaving) return;
     leave("left");
+  }
+
+  // The daily batch is a single list (FR-16), so "换一批" cycles within it
+  // instead of re-fetching the same ordered rows and showing card #1 again.
+  function refreshBatch() {
+    if (!items || items.length === 0 || busy || leaving) return;
+    leave("left", true);
   }
 
   async function follow() {
@@ -91,7 +101,12 @@ export default function MatchPage() {
   }
 
   function handleExitComplete() {
-    setIndex((value) => value + 1);
+    const wrap = wrapOnExit.current;
+    wrapOnExit.current = false;
+    setIndex((value) => {
+      if (!wrap || !items || items.length === 0) return value + 1;
+      return (value + 1) % items.length;
+    });
     setCardVisible(true);
     setLeaving(false);
   }
@@ -194,7 +209,7 @@ export default function MatchPage() {
         </div>
         <button
           type="button"
-          onClick={() => setReloadKey((key) => key + 1)}
+          onClick={refreshBatch}
           disabled={busy || leaving}
           className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[12px] text-slate-500 transition-colors hover:text-slate-700 disabled:opacity-50"
         >

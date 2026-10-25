@@ -68,6 +68,11 @@ export interface FollowItem {
   mutual: boolean;
 }
 
+export interface BlockedItem {
+  profile: PublicProfile;
+  blockedAt: string;
+}
+
 export interface ConversationItem {
   id: string;
   partner: PublicProfile;

@@ -1,6 +1,6 @@
 import { computeStreak, dateKey } from "@/lib/checkin/streak";
 import { pairKeyOf } from "@/lib/pair";
-import type { FriendItem, FollowItem, PublicProfile } from "@/lib/types";
+import type { BlockedItem, FriendItem, FollowItem, PublicProfile } from "@/lib/types";
 import type { SessionUser } from "../auth";
 import { getDb } from "../db";
 import { ApiError } from "../http";
@@ -242,6 +242,25 @@ export async function listFollowers(user: SessionUser): Promise<FollowItem[]> {
       profile: row,
       followedAt: iso(row.followedAt),
       mutual: Boolean((row as unknown as { mutual: boolean }).mutual),
+    }));
+  });
+}
+
+export async function listBlocked(user: SessionUser): Promise<BlockedItem[]> {
+  const db = await getDb();
+  return db.withUser(user.id, async (tx) => {
+    const rows = await tx.query<PublicProfile & { blockedAt: unknown }>(
+      `select ${PROFILE_COLUMNS}, b.created_at as "blockedAt"
+         from blocks b
+         join users u on u.id = b.blocked_id
+         join schools s on s.id = u.school_id
+        where b.blocker_id = $1
+        order by b.created_at desc`,
+      [user.id],
+    );
+    return rows.map(({ blockedAt, ...profile }) => ({
+      profile,
+      blockedAt: iso(blockedAt),
     }));
   });
 }

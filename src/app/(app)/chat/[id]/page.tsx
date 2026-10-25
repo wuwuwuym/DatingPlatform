@@ -7,6 +7,7 @@ import { motion, useReducedMotion } from "framer-motion";
 import { ChevronLeft, Flag, Send, ShieldCheck } from "lucide-react";
 import { zodiacLabel } from "@/lib/constants";
 import { api, errorMessage } from "@/lib/api-client";
+import { mergeMessages } from "@/lib/chat/merge";
 import { formatClock } from "@/lib/format";
 import type { ConversationItem, MessageItem } from "@/lib/types";
 import { ChatPrivacyDialog } from "@/components/chat-privacy-dialog";
@@ -34,18 +35,16 @@ export default function ChatRoomPage() {
   const newIds = useRef<Set<string>>(new Set());
 
   const append = useCallback((incoming: MessageItem[]) => {
-    if (incoming.length === 0) return;
-    setMessages((current) => {
-      const base = current ?? [];
-      const merged = [...base];
-      for (const message of incoming) {
-        if (seen.current.has(message.id)) continue;
-        seen.current.add(message.id);
-        newIds.current.add(message.id);
-        merged.push(message);
-      }
-      return merged;
-    });
+    // Dedupe before scheduling the update. Mutating `seen` inside the updater
+    // makes the second StrictMode pass skip the message and drop it.
+    const fresh = incoming.filter((message) => !seen.current.has(message.id));
+    if (fresh.length === 0) return;
+
+    for (const message of fresh) {
+      seen.current.add(message.id);
+      newIds.current.add(message.id);
+    }
+    setMessages((current) => mergeMessages(current ?? [], fresh));
   }, []);
 
   useEffect(() => {
