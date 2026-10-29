@@ -57,6 +57,9 @@ const DEFAULTS: ProfileUpdateInput = {
 const PIXEL =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 
+// Test-only fixture. Never use this value outside the test suite.
+const TEST_PASSWORD = "Test-password-2026";
+
 let counter = 0;
 
 async function makeUser(
@@ -70,7 +73,7 @@ async function makeUser(
       schoolId: options.schoolId ?? SCHOOL_ID,
       studentNo,
       verificationCode: "CAMPUS-2026",
-      password: "<REDACTED>",
+      password: TEST_PASSWORD,
       consents: { terms: true, privacy: true, matching: true },
     },
     `ip-${studentNo}`,
@@ -142,7 +145,7 @@ describe("campus MVP service flow", () => {
         schoolId: SCHOOL_ID,
         studentNo: "20260001",
         verificationCode: "CAMPUS-2026",
-        password: "<REDACTED>",
+        password: TEST_PASSWORD,
         consents: { terms: true, privacy: true, matching: true },
       },
       "ip-duplicate",
@@ -154,7 +157,7 @@ describe("campus MVP service flow", () => {
         schoolId: SCHOOL_ID,
         studentNo: "20269999",
         verificationCode: "CAMPUS-2026",
-        password: "<REDACTED>",
+        password: TEST_PASSWORD,
         consents: { terms: true, privacy: false, matching: true },
       },
       "ip-consent",
@@ -403,7 +406,7 @@ describe("campus MVP service flow", () => {
 
     await expectApiError(
       login(
-        { schoolId: SCHOOL_ID, studentNo: target.studentNo, password: "<REDACTED>" },
+        { schoolId: SCHOOL_ID, studentNo: target.studentNo, password: TEST_PASSWORD },
         "ip-banned-login",
       ),
       "ACCOUNT_BANNED",

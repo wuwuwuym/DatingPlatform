@@ -15,6 +15,7 @@ export async function createTestDb(): Promise<Db> {
  * exercise the real service layer (same code path as the HTTP routes).
  */
 export async function useServiceDatabase(): Promise<Db> {
+  // Test-only fixtures; never reuse these values in a real deployment.
   process.env.PGLITE_DIR = "memory";
   process.env.STUDENT_NO_PEPPER = "test-pepper-0123456789abcdef";
   process.env.SESSION_SECRET = "test-session-0123456789abcdef";

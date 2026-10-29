@@ -86,7 +86,7 @@
 - 登录调用 `POST /api/auth/login`，成功后按 `status` 跳转 `/match` 或 `/profile`。
 - 登录/注册成功后使用 `window.location.assign()` 做整页跳转：登录是会话边界，整页导航确保新的 httpOnly 会话 Cookie 一定被服务端树读取，也避免 App Router 客户端缓存在 `replace + refresh` 时反复刷新、导航不提交。
 - 注册页复用 `AuthField / AuthInput / AuthSelect / AuthSubmit / AuthError / AuthSwitch`，保证两个入口视觉一致。
-- **演示账号属于「星海大学」**：`20210001`–`20210008`，密码 `<REDACTED>`。登录时学校下拉需选择星海大学，否则会返回「学号或密码不正确」。
+- **演示账号属于「星海大学」**：`20210001`–`20210008`；密码由部署环境变量 `DEMO_PASSWORD` 设置，文档不保存具体值。登录时学校下拉需选择星海大学，否则会返回「学号或密码不正确」。
 
 ## 7. 文件
 

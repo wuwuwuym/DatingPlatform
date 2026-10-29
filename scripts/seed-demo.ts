@@ -9,7 +9,6 @@ import type { CircleMedia } from "../src/lib/types";
 import { getDb } from "../src/server/db";
 import { runMigrations } from "../src/server/migrate";
 
-const DEMO_PASSWORD = "<REDACTED>";
 const SCHOOL_ID = "5c000000-0000-4000-8000-000000000001";
 
 /** Reads a bundled demo photo and inlines it the same way the composer does. */
@@ -150,6 +149,15 @@ async function main(): Promise<void> {
     return;
   }
 
+  const demoPassword = process.env.DEMO_PASSWORD?.trim();
+  if (!demoPassword || demoPassword.length < 8) {
+    console.error(
+      "[seed] DEMO_PASSWORD is required (>= 8 chars). Set it in the shell; do not commit it.",
+    );
+    process.exitCode = 1;
+    return;
+  }
+
   const db = await getDb();
   await runMigrations(db);
 
@@ -158,7 +166,7 @@ async function main(): Promise<void> {
   }
 
   const pepper = config.studentNoPepper;
-  const passwordHash = await hashPassword(DEMO_PASSWORD);
+  const passwordHash = await hashPassword(demoPassword);
   const ids = new Map<string, string>();
 
   for (const profile of DEMO) {
@@ -372,7 +380,7 @@ async function main(): Promise<void> {
   });
 
   console.log("[seed] 演示数据就绪");
-  console.log(`[seed] 账号：20210001 ~ 20210008，密码：${DEMO_PASSWORD}`);
+  console.log("[seed] 账号：20210001 ~ 20210008；密码由 DEMO_PASSWORD 环境变量提供");
   console.log("[seed] 登录 20210001（林小满）可以直接体验好友聊天与打卡");
 
   await db.close();

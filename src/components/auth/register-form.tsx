@@ -37,7 +37,7 @@ const CONSENTS = [
   },
 ];
 
-export function RegisterForm({ demoCode }: { demoCode: string }) {
+export function RegisterForm() {
   const reduce = useReducedMotion();
   const [schools, setSchools] = useState<School[]>([]);
   const [schoolId, setSchoolId] = useState("");
@@ -143,14 +143,14 @@ export function RegisterForm({ demoCode }: { demoCode: string }) {
           />
         </AuthField>
 
-        <AuthField label="一次性核验码" htmlFor="register-code" hint={`演示码 ${demoCode}`}>
+        <AuthField label="一次性核验码" htmlFor="register-code" hint="由演示环境提供">
           <AuthInput
             id="register-code"
             icon={KeyRound}
             value={code}
             onChange={(event) => setCode(event.target.value)}
             autoComplete="one-time-code"
-            placeholder="CAMPUS-2026"
+            placeholder="输入核验码"
             required
           />
         </AuthField>
@@ -163,7 +163,7 @@ export function RegisterForm({ demoCode }: { demoCode: string }) {
             value={password}
             onChange={(event) => setPassword(event.target.value)}
             autoComplete="new-password"
-            placeholder="例如 <REDACTED>"
+            placeholder="至少 8 位，含字母与数字"
             required
           />
         </AuthField>

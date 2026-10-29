@@ -32,30 +32,33 @@ import { RateLimiter } from "@/lib/rate-limit";
 import { avatarVariantForId, toLandingStudent } from "@/lib/landing/adapters";
 import type { RecommendationItem } from "@/lib/types";
 
+// Test-only fixture. Never use this value outside the test suite.
+const TEST_PASSWORD = "Test-password-2026";
+
 describe("password hashing", () => {
   it("round-trips a valid password", async () => {
-    const stored = await hashPassword("<REDACTED>");
+    const stored = await hashPassword(TEST_PASSWORD);
     expect(stored.startsWith("scrypt$")).toBe(true);
-    expect(await verifyPassword("<REDACTED>", stored)).toBe(true);
+    expect(await verifyPassword(TEST_PASSWORD, stored)).toBe(true);
   });
 
   it("rejects a wrong password and malformed hashes", async () => {
-    const stored = await hashPassword("<REDACTED>");
-    expect(await verifyPassword("<REDACTED>", stored)).toBe(false);
-    expect(await verifyPassword("<REDACTED>", "not-a-hash")).toBe(false);
-    expect(await verifyPassword("<REDACTED>", "scrypt$x$y$z$aa$bb")).toBe(false);
+    const stored = await hashPassword(TEST_PASSWORD);
+    expect(await verifyPassword("Wrong-password-2027", stored)).toBe(false);
+    expect(await verifyPassword(TEST_PASSWORD, "not-a-hash")).toBe(false);
+    expect(await verifyPassword(TEST_PASSWORD, "scrypt$x$y$z$aa$bb")).toBe(false);
   });
 
   it("never stores the plaintext", async () => {
-    const stored = await hashPassword("<REDACTED>");
-    expect(stored).not.toContain("<REDACTED>");
+    const stored = await hashPassword(TEST_PASSWORD);
+    expect(stored).not.toContain(TEST_PASSWORD);
   });
 
   it("enforces the documented strength rules", () => {
     expect(checkPasswordStrength("short1").ok).toBe(false);
     expect(checkPasswordStrength("alllettersonly").ok).toBe(false);
     expect(checkPasswordStrength("12345678").ok).toBe(false);
-    expect(checkPasswordStrength("<REDACTED>").ok).toBe(true);
+    expect(checkPasswordStrength(TEST_PASSWORD).ok).toBe(true);
   });
 });
 

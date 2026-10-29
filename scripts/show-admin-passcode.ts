@@ -1,5 +1,10 @@
 import { getDevAdminPasscode } from "../src/lib/config";
 
+if (process.env.CI) {
+  console.error("[admin] 禁止在 CI 中输出管理口令；请只在本地终端运行。");
+  process.exit(1);
+}
+
 const passcode = getDevAdminPasscode();
 
 if (!passcode) {

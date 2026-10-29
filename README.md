@@ -7,16 +7,21 @@
 
 ---
 
-## 1. 快速开始（零配置）
+## 1. 快速开始
 
 ```bash
 pnpm install
 pnpm db:migrate      # 建表 + RLS + 基础数据（内置 PGlite，无需安装数据库）
+
+# 先设置演示密码（仅本地；至少 8 位，不要提交）
+$env:DEMO_PASSWORD="<demo-password>"   # PowerShell
+# export DEMO_PASSWORD="<demo-password>" # macOS / Linux
+
 pnpm db:seed         # 可选：写入 8 个演示用户、好友关系、会话、打卡与校园圈动态
 pnpm dev             # http://localhost:3100
 ```
 
-无需 Docker、无需 Supabase、无需 `.env`。本地首次运行会自动生成 `.data/dev-secrets.json`（已被 gitignore），用于签发会话 Cookie 与学号哈希 pepper。
+无需 Docker、无需 Supabase。`pnpm db:seed` 需要 `DEMO_PASSWORD` 环境变量；不要把真实值写入仓库。本地首次运行会自动生成 `.data/dev-secrets.json`（已被 gitignore），用于签发会话 Cookie 与学号哈希 pepper。
 
 > 注意：`pnpm start`（生产模式）不会使用开发密钥，必须提供 `STUDENT_NO_PEPPER`、`SESSION_SECRET`、`ADMIN_PASSCODE` 三个环境变量；本地演示请直接用 `pnpm dev`。
 
@@ -27,11 +32,11 @@ pnpm dev             # http://localhost:3100
 | `20210001` | 林小满 | 已与 2 位好友建立关系，有会话、历史打卡（连续 2 天，今天打卡即可解锁「初识火花」）与校园圈动态 |
 | `20210002` ~ `20210008` | — | 同校可匹配用户，用于体验推荐、互关、校园圈点赞评论与关注作者 |
 
-统一密码：`<REDACTED>`。
+统一密码：由环境变量 `DEMO_PASSWORD` 设置；本地首次 seed 前配置，不在仓库中保存具体值。
 
 ### 管理后台
 
-访问 `/admin`，口令由本地密钥文件生成：
+访问 `/admin`，口令由本地密钥文件生成。该命令会输出敏感值，只在本地终端运行，不要粘贴到聊天、Issue 或 CI 日志：
 
 ```bash
 pnpm admin:passcode

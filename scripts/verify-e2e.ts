@@ -8,7 +8,8 @@ import { getDevAdminPasscode } from "../src/lib/config";
 
 const BASE = process.env.E2E_BASE_URL ?? "http://127.0.0.1:3100";
 const SCHOOL_ID = "5c000000-0000-4000-8000-000000000001";
-const PASSWORD = "<REDACTED>";
+const DEMO_PASSWORD = process.env.DEMO_PASSWORD?.trim();
+const PASSWORD = DEMO_PASSWORD ?? "test-password-2026";
 const stamp = String(Date.now()).slice(-5);
 const STUDENT_A = `31${stamp}1`;
 const STUDENT_B = `31${stamp}2`;
@@ -406,22 +407,26 @@ async function main(): Promise<void> {
   );
   pass("未登录访问受保护页面会被重定向到登录");
 
-  const demo = new Client();
-  const demoLogin = await demo.call<{ status: string }>("/api/auth/login", {
-    body: { schoolId: SCHOOL_ID, studentNo: "20210001", password: "<REDACTED>" },
-  });
-  if (demoLogin.status === 200) {
-    const demoConversations = await demo.expectOk<{ items: { lastMessage: unknown }[] }>(
-      "/api/conversations",
-    );
-    assert.ok(demoConversations.items.length >= 1);
-    const demoFriends = await demo.expectOk<{ friends: unknown[] }>("/api/friends");
-    assert.ok(demoFriends.friends.length >= 2);
-    const demoFeed = await demo.expectOk<{ items: unknown[] }>("/api/posts");
-    assert.ok(demoFeed.items.length >= 3);
-    pass("演示账号 20210001 可直接登录，自带好友、会话与校园圈动态");
+  if (!DEMO_PASSWORD) {
+    console.log("  - 跳过演示账号检查（未设置 DEMO_PASSWORD）");
   } else {
-    console.log("  - 跳过演示账号检查（数据库中还没有 seed 数据）");
+    const demo = new Client();
+    const demoLogin = await demo.call<{ status: string }>("/api/auth/login", {
+      body: { schoolId: SCHOOL_ID, studentNo: "20210001", password: DEMO_PASSWORD },
+    });
+    if (demoLogin.status === 200) {
+      const demoConversations = await demo.expectOk<{ items: { lastMessage: unknown }[] }>(
+        "/api/conversations",
+      );
+      assert.ok(demoConversations.items.length >= 1);
+      const demoFriends = await demo.expectOk<{ friends: unknown[] }>("/api/friends");
+      assert.ok(demoFriends.friends.length >= 2);
+      const demoFeed = await demo.expectOk<{ items: unknown[] }>("/api/posts");
+      assert.ok(demoFeed.items.length >= 3);
+      pass("演示账号 20210001 可直接登录，自带好友、会话与校园圈动态");
+    } else {
+      console.log("  - 跳过演示账号检查（数据库中还没有匹配的 seed 数据）");
+    }
   }
 
   console.log(`\n全部 ${checks.length} 项检查通过 ✅\n`);
